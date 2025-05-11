@@ -234,30 +234,41 @@ class ESCOIngest:
         logger.info("Created skill-skill relations")
 
     def create_vector_indexes(self):
-        """Create vector indexes for Neo4j vector search"""
-        with self.driver.session() as session:
-            # Create vector indexes for skills
-            session.run("""
-                CREATE VECTOR INDEX skill_embedding IF NOT EXISTS
-                FOR (s:Skill)
-                ON s.embedding
-                OPTIONS {indexConfig: {
-                    `vector.dimensions`: 384,  # For all-MiniLM-L6-v2
-                    `vector.similarity_function`: 'cosine'
-                }}
-            """)
-            
-            # Create vector indexes for occupations
-            session.run("""
-                CREATE VECTOR INDEX occupation_embedding IF NOT EXISTS
-                FOR (o:Occupation)
-                ON o.embedding
-                OPTIONS {indexConfig: {
-                    `vector.dimensions`: 384,
-                    `vector.similarity_function`: 'cosine'
-                }}
-            """)
-        logger.info("Created vector indexes for semantic search")
+        """Create vector indexes for Neo4j vector search if supported"""
+        try:
+            with self.driver.session() as session:
+                # Check Neo4j version
+                version_result = session.run("CALL dbms.components() YIELD versions").single()
+                version = version_result['versions'][0]
+                major, minor, patch = map(int, version.split('.')[:3])
+                
+                if major > 5 or (major == 5 and minor >= 11):
+                    # Create vector indexes for skills
+                    session.run("""
+                        CREATE VECTOR INDEX skill_embedding IF NOT EXISTS
+                        FOR (s:Skill)
+                        ON s.embedding
+                        OPTIONS {indexConfig: {
+                            `vector.dimensions`: 384,
+                            `vector.similarity_function`: 'cosine'
+                        }}
+                    """)
+                    
+                    # Create vector indexes for occupations
+                    session.run("""
+                        CREATE VECTOR INDEX occupation_embedding IF NOT EXISTS
+                        FOR (o:Occupation)
+                        ON o.embedding
+                        OPTIONS {indexConfig: {
+                            `vector.dimensions`: 384,
+                            `vector.similarity_function`: 'cosine'
+                        }}
+                    """)
+                    logger.info("Created vector indexes for semantic search")
+                else:
+                    logger.warning(f"Vector indexes are not supported in Neo4j version {version}. Skipping vector index creation.")
+        except Exception as e:
+            logger.warning(f"Could not create vector indexes: {str(e)}. Continuing without vector indexes.")
 
     def generate_and_store_embeddings(self, embedding_util):
         """Generate embeddings for all skills and occupations"""
@@ -320,7 +331,7 @@ class ESCOIngest:
             self.create_occupation_skill_relations()
             self.create_skill_skill_relations()
             
-            # Add vector indexes for semantic search
+            # Add vector indexes for semantic search (if supported)
             self.create_vector_indexes()
             
             # Generate embeddings
@@ -338,7 +349,7 @@ class ESCOIngest:
     def run_embeddings_only(self):
         """Run only the embedding generation and indexing for semantic search"""
         try:
-            # Create vector indexes
+            # Create vector indexes (if supported)
             self.create_vector_indexes()
             
             # Generate embeddings

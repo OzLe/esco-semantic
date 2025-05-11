@@ -12,6 +12,54 @@ This tool is provided "AS IS", without warranty of any kind, express or implied,
 - Neo4j Database (version 5.x)
 - ESCO CSV files (v1.2.0 or compatible)
 
+## macOS Installation (Apple Silicon)
+
+If you're using macOS on Apple Silicon (M1/M2/M3), follow these steps to ensure proper installation of dependencies:
+
+1. Start fresh (single toolchain):
+```bash
+# remove the half-configured environment
+conda deactivate
+conda env remove -n esco || true   # ignore if it does not exist
+
+# create a pure ARM64 env
+conda create -n esco python=3.10 -c conda-forge
+conda activate esco
+```
+
+2. Install binary dependencies first:
+```bash
+conda install -c conda-forge libjpeg-turbo=3 pillow  # brings a matching pair
+# optional: if you need other compiled libs, install them here too
+```
+
+3. Install your Python stack:
+```bash
+python -m pip install --upgrade pip
+pip install sentence-transformers neo4j tqdm  # and the rest of requirements.txt
+```
+
+This order guarantees that every wheel built from source (if any) sees conda-forge's compiler flags and libraries.
+
+4. Make sure user-site packages are not injected:
+```bash
+# inside the conda shell:
+export PYTHONNOUSERSITE=1   # or add this in your ~/.zshrc
+```
+
+5. Diagnostic sanity checks:
+```bash
+python - <<'PY'
+import importlib.util, subprocess, sys, os
+lib = importlib.util.find_spec('PIL._imaging').origin
+print("Pillow C-extension:", lib)
+print("Linked against:")
+subprocess.check_call(["otool", "-L", lib])
+PY
+```
+
+The output should list **$CONDA_PREFIX/lib/libjpeg.**dylib, not /usr/local/lib or /opt/homebrew/lib.
+
 ## Installation
 
 1. Clone this repository:
