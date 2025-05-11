@@ -139,13 +139,16 @@ class ESCOIngest:
     def create_skill_hierarchy(self):
         def process_batch(batch):
             with self.driver.session() as session:
-                for _, row in batch.iterrows():
-                    query = """
-                    MATCH (child:Skill {conceptUri: $childUri})
-                    MATCH (parent:Skill {conceptUri: $parentUri})
-                    MERGE (parent)-[:BROADER_THAN]->(child)
-                    """
-                    session.run(query, childUri=row['conceptUri'], parentUri=row['broaderUri'])
+                # Convert batch to list of dictionaries
+                data = batch[['conceptUri', 'broaderUri']].to_dict('records')
+                
+                query = """
+                UNWIND $data as row
+                MATCH (child:Skill {conceptUri: row.conceptUri})
+                MATCH (parent:Skill {conceptUri: row.broaderUri})
+                MERGE (parent)-[:BROADER_THAN]->(child)
+                """
+                session.run(query, data=data)
 
         file_path = os.path.join(self.esco_dir, 'broaderRelationsSkillPillar_en.csv')
         self.process_csv_in_batches(file_path, process_batch)
@@ -154,13 +157,16 @@ class ESCOIngest:
     def create_isco_hierarchy(self):
         def process_batch(batch):
             with self.driver.session() as session:
-                for _, row in batch.iterrows():
-                    query = """
-                    MATCH (child:ISCOGroup {conceptUri: $childUri})
-                    MATCH (parent:ISCOGroup {conceptUri: $parentUri})
-                    MERGE (parent)-[:BROADER_THAN]->(child)
-                    """
-                    session.run(query, childUri=row['conceptUri'], parentUri=row['broaderUri'])
+                # Convert batch to list of dictionaries
+                data = batch[['conceptUri', 'broaderUri']].to_dict('records')
+                
+                query = """
+                UNWIND $data as row
+                MATCH (child:ISCOGroup {conceptUri: row.conceptUri})
+                MATCH (parent:ISCOGroup {conceptUri: row.broaderUri})
+                MERGE (parent)-[:BROADER_THAN]->(child)
+                """
+                session.run(query, data=data)
 
         file_path = os.path.join(self.esco_dir, 'broaderRelationsOccPillar_en.csv')
         self.process_csv_in_batches(file_path, process_batch)
@@ -180,22 +186,30 @@ class ESCOIngest:
     def create_occupation_skill_relations(self):
         def process_batch(batch):
             with self.driver.session() as session:
-                for _, row in batch.iterrows():
-                    if row['relationType'] == 'essential':
-                        query = """
-                        MATCH (s:Skill {conceptUri: $skillUri})
-                        MATCH (o:Occupation {conceptUri: $occupationUri})
-                        MERGE (s)-[:ESSENTIAL_FOR]->(o)
-                        """
-                    else:
-                        query = """
-                        MATCH (s:Skill {conceptUri: $skillUri})
-                        MATCH (o:Occupation {conceptUri: $occupationUri})
-                        MERGE (s)-[:OPTIONAL_FOR]->(o)
-                        """
-                    session.run(query, 
-                              skillUri=row['skillUri'],
-                              occupationUri=row['occupationUri'])
+                # Prepare batch data for essential relations
+                essential_data = batch[batch['relationType'] == 'essential'][['skillUri', 'occupationUri']].to_dict('records')
+                # Prepare batch data for optional relations
+                optional_data = batch[batch['relationType'] == 'optional'][['skillUri', 'occupationUri']].to_dict('records')
+                
+                # Process essential relations in batch
+                if essential_data:
+                    query = """
+                    UNWIND $data as row
+                    MATCH (s:Skill {conceptUri: row.skillUri})
+                    MATCH (o:Occupation {conceptUri: row.occupationUri})
+                    MERGE (s)-[:ESSENTIAL_FOR]->(o)
+                    """
+                    session.run(query, data=essential_data)
+                
+                # Process optional relations in batch
+                if optional_data:
+                    query = """
+                    UNWIND $data as row
+                    MATCH (s:Skill {conceptUri: row.skillUri})
+                    MATCH (o:Occupation {conceptUri: row.occupationUri})
+                    MERGE (s)-[:OPTIONAL_FOR]->(o)
+                    """
+                    session.run(query, data=optional_data)
 
         file_path = os.path.join(self.esco_dir, 'occupationSkillRelations_en.csv')
         self.process_csv_in_batches(file_path, process_batch)
@@ -204,16 +218,16 @@ class ESCOIngest:
     def create_skill_skill_relations(self):
         def process_batch(batch):
             with self.driver.session() as session:
-                for _, row in batch.iterrows():
-                    query = """
-                    MATCH (a:Skill {conceptUri: $originalSkillUri})
-                    MATCH (b:Skill {conceptUri: $relatedSkillUri})
-                    MERGE (a)-[:RELATED_SKILL {type: $relationType}]->(b)
-                    """
-                    session.run(query, 
-                              originalSkillUri=row['originalSkillUri'],
-                              relatedSkillUri=row['relatedSkillUri'],
-                              relationType=row['relationType'])
+                # Convert batch to list of dictionaries
+                data = batch[['originalSkillUri', 'relatedSkillUri', 'relationType']].to_dict('records')
+                
+                query = """
+                UNWIND $data as row
+                MATCH (a:Skill {conceptUri: row.originalSkillUri})
+                MATCH (b:Skill {conceptUri: row.relatedSkillUri})
+                MERGE (a)-[:RELATED_SKILL {type: row.relationType}]->(b)
+                """
+                session.run(query, data=data)
 
         file_path = os.path.join(self.esco_dir, 'skillSkillRelations_en.csv')
         self.process_csv_in_batches(file_path, process_batch)
