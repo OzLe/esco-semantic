@@ -3,6 +3,7 @@ from neo4j import GraphDatabase
 import pandas as pd
 from tqdm import tqdm
 import logging
+import argparse
 
 
 
@@ -320,13 +321,47 @@ class ESCOIngest:
         finally:
             self.close()
 
-if __name__ == "__main__":
-    # Configuration
-    NEO4J_URI = "bolt://localhost:7687"  # Update with your Neo4j URI
-    NEO4J_USER = "neo4j"                 # Update with your username
-    NEO4J_PASSWORD = "Abcd1234@"          # Update with your password
-    ESCO_DIR = "ESCO"                    # Directory containing ESCO CSV files
+    def run_embeddings_only(self):
+        """Run only the embedding generation and indexing for semantic search"""
+        try:
+            # Create vector indexes
+            self.create_vector_indexes()
+            
+            # Generate embeddings
+            from embedding_utils import ESCOEmbedding
+            embedding_util = ESCOEmbedding()
+            self.generate_and_store_embeddings(embedding_util)
+            
+            logger.info("Embedding generation and indexing completed successfully")
+        except Exception as e:
+            logger.error(f"Error during embedding generation: {str(e)}")
+            raise
+        finally:
+            self.close()
 
-    # Create and run the ingestor
-    ingestor = ESCOIngest(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, ESCO_DIR)
-    ingestor.run_ingest() 
+def main():
+    parser = argparse.ArgumentParser(description='ESCO Data Ingestion Tool')
+    
+    # Neo4j connection parameters
+    parser.add_argument('--uri', type=str, default='bolt://localhost:7687', help='Neo4j URI')
+    parser.add_argument('--user', type=str, default='neo4j', help='Neo4j username')
+    parser.add_argument('--password', type=str, required=True, help='Neo4j password')
+    parser.add_argument('--esco-dir', type=str, default='ESCO', help='Directory containing ESCO CSV files')
+    
+    # Execution mode
+    parser.add_argument('--embeddings-only', action='store_true', 
+                      help='Run only the embedding generation and indexing (assumes ESCO graph exists)')
+    
+    args = parser.parse_args()
+    
+    # Create ingestor instance
+    ingestor = ESCOIngest(args.uri, args.user, args.password, args.esco_dir)
+    
+    # Run appropriate process
+    if args.embeddings_only:
+        ingestor.run_embeddings_only()
+    else:
+        ingestor.run_ingest()
+
+if __name__ == "__main__":
+    main() 
