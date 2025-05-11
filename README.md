@@ -12,6 +12,60 @@ This tool is provided "AS IS", without warranty of any kind, express or implied,
 - Neo4j Database (version 5.x)
 - ESCO CSV files (v1.2.0 or compatible)
 
+## Environment Setup for Translation
+
+### Apple Silicon (M1/M2/M3) Setup
+
+For optimal performance on Apple Silicon Macs, follow these steps:
+
+1. Create a fresh conda environment:
+```bash
+conda create -n esco python=3.10 -y
+conda activate esco
+```
+
+2. Install native dependencies with proper version constraints:
+```bash
+pip install "protobuf<4" \
+           "sentencepiece>=0.1.99" \
+           "tokenizers>=0.19.0" \
+           "tiktoken>=0.6.0"
+```
+
+3. Install Hugging Face libraries:
+```bash
+pip install "transformers>=4.49.1" torch accelerate
+```
+
+4. Verify the installation:
+```bash
+python - <<'PY'
+import tiktoken, sentencepiece, google.protobuf, transformers
+print("All critical libraries imported successfully.")
+PY
+```
+
+Note: The quotes around version specifiers are important in zsh to prevent unintended redirection.
+
+### Troubleshooting Translation Dependencies
+
+If you encounter tokenizer initialization errors:
+
+1. Ensure protobuf is pinned to version 3.x:
+```bash
+pip install "protobuf<4"
+```
+
+2. Verify all dependencies are installed in the same environment:
+```bash
+python -m pip show protobuf sentencepiece tokenizers tiktoken transformers
+```
+
+3. For Apple Silicon users, ensure you're using the native wheels:
+```bash
+pip install --upgrade --force-reinstall "tiktoken>=0.6.0"
+```
+
 ## macOS Installation (Apple Silicon)
 
 If you're using macOS on Apple Silicon (M1/M2/M3), follow these steps to ensure proper installation of dependencies:
@@ -185,6 +239,44 @@ The search functionality uses the `all-MiniLM-L6-v2` model for generating embedd
 - Node descriptions
 - Related entities (when using --related)
 - Graph context for each result
+
+### Hebrew Translation
+
+The tool includes functionality to translate English text to Hebrew using the T5 Hebrew translation model. This is particularly useful for creating Hebrew versions of node properties.
+
+To translate node properties to Hebrew:
+
+```bash
+python src/esco_translate.py --password "your_password" --property "preferredLabel" --type Skill
+```
+
+Additional translation options:
+- `--property`: The property to translate (e.g., "preferredLabel", "description")
+- `--type`: Node type to translate (Skill, Occupation, SkillGroup, or ISCOGroup)
+- `--batch-size`: Number of nodes to process in each batch (default: 100)
+- `--suffix`: Suffix for the translated property (default: "_he")
+
+Example with all options:
+```bash
+python src/esco_translate.py \
+    --password "your_password" \
+    --property "preferredLabel" \
+    --type Skill \
+    --batch-size 50 \
+    --suffix "_he"
+```
+
+The translation process:
+1. Loads the T5 Hebrew translation model
+2. Processes nodes in batches to optimize memory usage
+3. Creates new properties with the specified suffix
+4. Preserves the original English text
+5. Updates the Neo4j database with translated content
+
+Note: The translation model requires additional dependencies. Install them using:
+```bash
+pip install transformers torch
+```
 
 ## Data Model
 
