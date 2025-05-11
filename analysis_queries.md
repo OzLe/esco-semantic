@@ -196,6 +196,150 @@ ORDER BY communityId, n.preferredLabel;
 CALL gds.graph.drop('escoGraph');
 ```
 
+## Semantic Enrichment Queries
+
+### Complete Occupation Profile
+*Extracts all related information for a specific occupation, including required skills, optional skills, ISCO group, and related occupations. Useful for creating comprehensive occupation profiles.*
+
+```cypher
+MATCH (o:Occupation {preferredLabel: 'Occupation Name'})
+OPTIONAL MATCH (o)<-[r1:ESSENTIAL_FOR]-(s1:Skill)
+OPTIONAL MATCH (o)<-[r2:OPTIONAL_FOR]-(s2:Skill)
+OPTIONAL MATCH (o)-[:PART_OF_ISCOGROUP]->(i:ISCOGroup)
+OPTIONAL MATCH (o)-[:BROADER_THAN]->(o2:Occupation)
+OPTIONAL MATCH (o)<-[:BROADER_THAN]-(o3:Occupation)
+RETURN 
+    o.preferredLabel as Occupation,
+    o.altLabels as AlternativeLabels,
+    o.description as Description,
+    collect(DISTINCT {
+        skill: s1.preferredLabel,
+        type: 'Essential'
+    }) as EssentialSkills,
+    collect(DISTINCT {
+        skill: s2.preferredLabel,
+        type: 'Optional'
+    }) as OptionalSkills,
+    collect(DISTINCT {
+        iscoGroup: i.preferredLabel,
+        iscoCode: i.code
+    }) as ISCOGroups,
+    collect(DISTINCT o2.preferredLabel) as BroaderOccupations,
+    collect(DISTINCT o3.preferredLabel) as NarrowerOccupations;
+```
+
+### Complete Skill Profile
+*Extracts all related information for a specific skill, including occupations that require it, related skills, and skill groups. Useful for creating comprehensive skill profiles.*
+
+```cypher
+MATCH (s:Skill {preferredLabel: 'Skill Name'})
+OPTIONAL MATCH (s)-[r1:ESSENTIAL_FOR]->(o1:Occupation)
+OPTIONAL MATCH (s)-[r2:OPTIONAL_FOR]->(o2:Occupation)
+OPTIONAL MATCH (s)-[:BROADER_THAN]->(s2:Skill)
+OPTIONAL MATCH (s)<-[:BROADER_THAN]-(s3:Skill)
+OPTIONAL MATCH (s)-[:RELATED_SKILL]-(s4:Skill)
+OPTIONAL MATCH (s)-[:PART_OF_SKILLGROUP]->(sg:SkillGroup)
+RETURN 
+    s.preferredLabel as Skill,
+    s.altLabels as AlternativeLabels,
+    s.description as Description,
+    collect(DISTINCT {
+        occupation: o1.preferredLabel,
+        type: 'Essential'
+    }) as EssentialForOccupations,
+    collect(DISTINCT {
+        occupation: o2.preferredLabel,
+        type: 'Optional'
+    }) as OptionalForOccupations,
+    collect(DISTINCT s2.preferredLabel) as BroaderSkills,
+    collect(DISTINCT s3.preferredLabel) as NarrowerSkills,
+    collect(DISTINCT s4.preferredLabel) as RelatedSkills,
+    collect(DISTINCT sg.preferredLabel) as SkillGroups;
+```
+
+### Occupation-Skill Network
+*Extracts the complete network of skills and occupations related to a specific occupation, including indirect relationships. Useful for understanding the broader context of an occupation.*
+
+```cypher
+MATCH (o:Occupation {preferredLabel: 'Occupation Name'})
+OPTIONAL MATCH (o)<-[r1:ESSENTIAL_FOR]-(s1:Skill)
+OPTIONAL MATCH (o)<-[r2:OPTIONAL_FOR]-(s2:Skill)
+OPTIONAL MATCH (s1)-[:RELATED_SKILL]-(s3:Skill)
+OPTIONAL MATCH (s2)-[:RELATED_SKILL]-(s4:Skill)
+OPTIONAL MATCH (s3)-[:ESSENTIAL_FOR]->(o2:Occupation)
+OPTIONAL MATCH (s4)-[:ESSENTIAL_FOR]->(o3:Occupation)
+RETURN 
+    o.preferredLabel as Occupation,
+    collect(DISTINCT {
+        skill: s1.preferredLabel,
+        type: 'Direct Essential'
+    }) as DirectEssentialSkills,
+    collect(DISTINCT {
+        skill: s2.preferredLabel,
+        type: 'Direct Optional'
+    }) as DirectOptionalSkills,
+    collect(DISTINCT {
+        skill: s3.preferredLabel,
+        type: 'Related to Essential'
+    }) as RelatedToEssentialSkills,
+    collect(DISTINCT {
+        skill: s4.preferredLabel,
+        type: 'Related to Optional'
+    }) as RelatedToOptionalSkills,
+    collect(DISTINCT {
+        occupation: o2.preferredLabel,
+        type: 'Related via Essential Skills'
+    }) as RelatedOccupationsViaEssential,
+    collect(DISTINCT {
+        occupation: o3.preferredLabel,
+        type: 'Related via Optional Skills'
+    }) as RelatedOccupationsViaOptional;
+```
+
+### Skill-Occupation Network
+*Extracts the complete network of occupations and skills related to a specific skill, including indirect relationships. Useful for understanding the broader context of a skill.*
+
+```cypher
+MATCH (s:Skill {preferredLabel: 'Skill Name'})
+OPTIONAL MATCH (s)-[r1:ESSENTIAL_FOR]->(o1:Occupation)
+OPTIONAL MATCH (s)-[r2:OPTIONAL_FOR]->(o2:Occupation)
+OPTIONAL MATCH (o1)-[:PART_OF_ISCOGROUP]->(i1:ISCOGroup)
+OPTIONAL MATCH (o2)-[:PART_OF_ISCOGROUP]->(i2:ISCOGroup)
+OPTIONAL MATCH (s)-[:RELATED_SKILL]-(s2:Skill)
+OPTIONAL MATCH (s2)-[:ESSENTIAL_FOR]->(o3:Occupation)
+OPTIONAL MATCH (s2)-[:OPTIONAL_FOR]->(o4:Occupation)
+RETURN 
+    s.preferredLabel as Skill,
+    collect(DISTINCT {
+        occupation: o1.preferredLabel,
+        type: 'Direct Essential'
+    }) as DirectEssentialOccupations,
+    collect(DISTINCT {
+        occupation: o2.preferredLabel,
+        type: 'Direct Optional'
+    }) as DirectOptionalOccupations,
+    collect(DISTINCT {
+        iscoGroup: i1.preferredLabel,
+        type: 'Via Essential'
+    }) as ISCOGroupsViaEssential,
+    collect(DISTINCT {
+        iscoGroup: i2.preferredLabel,
+        type: 'Via Optional'
+    }) as ISCOGroupsViaOptional,
+    collect(DISTINCT {
+        skill: s2.preferredLabel,
+        type: 'Related'
+    }) as RelatedSkills,
+    collect(DISTINCT {
+        occupation: o3.preferredLabel,
+        type: 'Via Related Skills Essential'
+    }) as OccupationsViaRelatedEssential,
+    collect(DISTINCT {
+        occupation: o4.preferredLabel,
+        type: 'Via Related Skills Optional'
+    }) as OccupationsViaRelatedOptional;
+```
+
 ## Notes
 
 1. For advanced analysis queries:
@@ -206,6 +350,11 @@ CALL gds.graph.drop('escoGraph');
 2. Replace placeholder values (like 'Skill Name 1', 'Occupation Name') with actual values from your graph.
 3. Adjust LIMIT clauses based on your needs and data volume.
 4. Some queries might need optimization for large datasets.
+5. For semantic enrichment queries:
+   - Replace 'Occupation Name' or 'Skill Name' with the actual label you want to analyze
+   - The queries return structured data that can be easily processed for semantic enrichment
+   - Consider adding filters to focus on specific aspects of the relationships
+   - The network queries might return large result sets for highly connected nodes
 
 ## Usage Tips
 
