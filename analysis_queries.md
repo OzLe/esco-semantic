@@ -150,30 +150,59 @@ RETURN o.preferredLabel as Occupation, collect(s.preferredLabel) as RequiredSkil
 
 ## Advanced Analysis
 
+### Graph Projection for Advanced Analysis
+*Before running centrality or community detection algorithms, you need to project your graph into the GDS library. These steps create an in-memory projection of your graph that can be used for graph algorithms.*
+
+```cypher
+// First, create the graph projection
+CALL gds.graph.project(
+    'escoGraph',
+    ['Skill', 'Occupation', 'ISCOGroup', 'SkillGroup'],
+    ['ESSENTIAL_FOR', 'OPTIONAL_FOR', 'BROADER_THAN', 'PART_OF_ISCOGROUP', 'RELATED_SKILL']
+);
+
+// Verify the projection was created
+CALL gds.graph.list();
+```
+
 ### Skills with High Centrality (Betweenness)
 *Identifies skills that act as bridges between different parts of the taxonomy. These skills might be particularly important for connecting different domains.*
+
 ```cypher
-CALL gds.betweenness.stream('myGraph')
+// Run betweenness centrality on the projected graph
+CALL gds.betweenness.stream('escoGraph')
 YIELD nodeId, score
 MATCH (n) WHERE id(n) = nodeId
 RETURN n.preferredLabel as Skill, score as BetweennessScore
 ORDER BY BetweennessScore DESC
 LIMIT 20;
+
+// After you're done with the analysis, you can drop the graph projection
+CALL gds.graph.drop('escoGraph');
 ```
 
 ### Community Detection in Skills
 *Groups skills into communities based on their relationships. Helps identify clusters of related skills and potential skill domains.*
+
 ```cypher
-CALL gds.louvain.stream('myGraph')
+// Run community detection on the projected graph
+CALL gds.louvain.stream('escoGraph')
 YIELD nodeId, communityId
 MATCH (n) WHERE id(n) = nodeId
 RETURN n.preferredLabel as Skill, communityId
 ORDER BY communityId, n.preferredLabel;
+
+// After you're done with the analysis, you can drop the graph projection
+CALL gds.graph.drop('escoGraph');
 ```
 
 ## Notes
 
-1. Some queries (like centrality and community detection) require the Neo4j Graph Data Science library to be installed and the graph to be projected.
+1. For advanced analysis queries:
+   - Make sure the Neo4j Graph Data Science library is installed
+   - The graph projection step is required before running centrality or community detection
+   - The projection creates an in-memory copy of your graph optimized for graph algorithms
+   - Remember to drop the projection when you're done to free up memory
 2. Replace placeholder values (like 'Skill Name 1', 'Occupation Name') with actual values from your graph.
 3. Adjust LIMIT clauses based on your needs and data volume.
 4. Some queries might need optimization for large datasets.
