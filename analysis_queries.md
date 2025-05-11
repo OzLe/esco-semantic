@@ -340,6 +340,84 @@ RETURN
     }) as OccupationsViaRelatedOptional;
 ```
 
+### Graph Visualization Queries
+
+#### Occupation Profile Graph
+*Returns the complete graph structure for an occupation and its related nodes. Useful for visualizing the occupation's context in the taxonomy.*
+
+```cypher
+MATCH (o:Occupation {preferredLabel: 'Occupation Name'})
+OPTIONAL MATCH (o)<-[r1:ESSENTIAL_FOR]-(s1:Skill)
+OPTIONAL MATCH (o)<-[r2:OPTIONAL_FOR]-(s2:Skill)
+OPTIONAL MATCH (o)-[:PART_OF_ISCOGROUP]->(i:ISCOGroup)
+OPTIONAL MATCH (o)-[:BROADER_THAN]->(o2:Occupation)
+OPTIONAL MATCH (o)<-[:BROADER_THAN]-(o3:Occupation)
+RETURN o, s1, s2, i, o2, o3, r1, r2;
+```
+
+#### Skill Profile Graph
+*Returns the complete graph structure for a skill and its related nodes. Useful for visualizing the skill's context in the taxonomy.*
+
+```cypher
+MATCH (s:Skill {preferredLabel: 'Skill Name'})
+OPTIONAL MATCH (s)-[r1:ESSENTIAL_FOR]->(o1:Occupation)
+OPTIONAL MATCH (s)-[r2:OPTIONAL_FOR]->(o2:Occupation)
+OPTIONAL MATCH (s)-[:BROADER_THAN]->(s2:Skill)
+OPTIONAL MATCH (s)<-[:BROADER_THAN]-(s3:Skill)
+OPTIONAL MATCH (s)-[:RELATED_SKILL]-(s4:Skill)
+OPTIONAL MATCH (s)-[:PART_OF_SKILLGROUP]->(sg:SkillGroup)
+RETURN s, o1, o2, s2, s3, s4, sg, r1, r2;
+```
+
+#### Occupation-Skill Network Graph
+*Returns the complete network graph for an occupation, including indirect relationships. Useful for visualizing the broader context of an occupation.*
+
+```cypher
+MATCH (o:Occupation {preferredLabel: 'Occupation Name'})
+OPTIONAL MATCH (o)<-[r1:ESSENTIAL_FOR]-(s1:Skill)
+OPTIONAL MATCH (o)<-[r2:OPTIONAL_FOR]-(s2:Skill)
+OPTIONAL MATCH (s1)-[:RELATED_SKILL]-(s3:Skill)
+OPTIONAL MATCH (s2)-[:RELATED_SKILL]-(s4:Skill)
+OPTIONAL MATCH (s3)-[:ESSENTIAL_FOR]->(o2:Occupation)
+OPTIONAL MATCH (s4)-[:ESSENTIAL_FOR]->(o3:Occupation)
+RETURN o, s1, s2, s3, s4, o2, o3, r1, r2;
+```
+
+#### Skill-Occupation Network Graph
+*Returns the complete network graph for a skill, including indirect relationships. Useful for visualizing the broader context of a skill.*
+
+```cypher
+MATCH (s:Skill {preferredLabel: 'Skill Name'})
+OPTIONAL MATCH (s)-[r1:ESSENTIAL_FOR]->(o1:Occupation)
+OPTIONAL MATCH (s)-[r2:OPTIONAL_FOR]->(o2:Occupation)
+OPTIONAL MATCH (o1)-[:PART_OF_ISCOGROUP]->(i1:ISCOGroup)
+OPTIONAL MATCH (o2)-[:PART_OF_ISCOGROUP]->(i2:ISCOGroup)
+OPTIONAL MATCH (s)-[:RELATED_SKILL]-(s2:Skill)
+OPTIONAL MATCH (s2)-[:ESSENTIAL_FOR]->(o3:Occupation)
+OPTIONAL MATCH (s2)-[:OPTIONAL_FOR]->(o4:Occupation)
+RETURN s, o1, o2, i1, i2, s2, o3, o4, r1, r2;
+```
+
+#### Custom Graph Visualization with Properties
+*Returns a graph with specific properties for better visualization. You can customize the properties shown for each node type.*
+
+```cypher
+MATCH (o:Occupation {preferredLabel: 'Occupation Name'})
+OPTIONAL MATCH (o)<-[r1:ESSENTIAL_FOR]-(s1:Skill)
+OPTIONAL MATCH (o)<-[r2:OPTIONAL_FOR]-(s2:Skill)
+OPTIONAL MATCH (o)-[:PART_OF_ISCOGROUP]->(i:ISCOGroup)
+OPTIONAL MATCH (o)-[:BROADER_THAN]->(o2:Occupation)
+OPTIONAL MATCH (o)<-[:BROADER_THAN]-(o3:Occupation)
+RETURN 
+    o {.preferredLabel, .description, type: 'Occupation'} as Occupation,
+    s1 {.preferredLabel, type: 'Skill', relation: 'Essential'} as EssentialSkills,
+    s2 {.preferredLabel, type: 'Skill', relation: 'Optional'} as OptionalSkills,
+    i {.preferredLabel, .code, type: 'ISCOGroup'} as ISCOGroup,
+    o2 {.preferredLabel, type: 'Occupation', relation: 'Broader'} as BroaderOccupations,
+    o3 {.preferredLabel, type: 'Occupation', relation: 'Narrower'} as NarrowerOccupations,
+    r1, r2;
+```
+
 ## Notes
 
 1. For advanced analysis queries:
@@ -355,6 +433,13 @@ RETURN
    - The queries return structured data that can be easily processed for semantic enrichment
    - Consider adding filters to focus on specific aspects of the relationships
    - The network queries might return large result sets for highly connected nodes
+6. For graph visualization queries:
+   - These queries return the actual graph structure instead of text data
+   - Use Neo4j Browser's visualization features to explore the results
+   - The graph structure makes it easier to understand relationships
+   - You can customize the properties shown for each node type
+   - Consider using different colors for different node types in the visualization
+   - The custom graph visualization query can be modified to show different properties
 
 ## Usage Tips
 
