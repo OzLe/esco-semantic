@@ -218,6 +218,78 @@ class ESCOIngest:
         self.process_csv_in_batches(file_path, process_batch)
         logger.info("Created skill-skill relations")
 
+    def create_vector_indexes(self):
+        """Create vector indexes for Neo4j vector search"""
+        with self.driver.session() as session:
+            # Create vector indexes for skills
+            session.run("""
+                CREATE VECTOR INDEX skill_embedding IF NOT EXISTS
+                FOR (s:Skill)
+                ON s.embedding
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: 384,  # For all-MiniLM-L6-v2
+                    `vector.similarity_function`: 'cosine'
+                }}
+            """)
+            
+            # Create vector indexes for occupations
+            session.run("""
+                CREATE VECTOR INDEX occupation_embedding IF NOT EXISTS
+                FOR (o:Occupation)
+                ON o.embedding
+                OPTIONS {indexConfig: {
+                    `vector.dimensions`: 384,
+                    `vector.similarity_function`: 'cosine'
+                }}
+            """)
+        logger.info("Created vector indexes for semantic search")
+
+    def generate_and_store_embeddings(self, embedding_util):
+        """Generate embeddings for all skills and occupations"""
+        # Process skills
+        logger.info("Generating embeddings for skills")
+        with self.driver.session() as session:
+            # Get skills in batches
+            query = "MATCH (s:Skill) RETURN s.conceptUri as uri, s.preferredLabel as label, s.description as description, s.altLabels as altLabels"
+            result = session.run(query)
+            
+            for record in tqdm(result, desc="Embedding skills"):
+                node_data = {
+                    'preferredLabel': record['label'],
+                    'description': record['description'],
+                    'altLabels': record['altLabels']
+                }
+                
+                embedding = embedding_util.generate_node_embedding(node_data)
+                if embedding:
+                    # Store embedding back in Neo4j
+                    session.run(
+                        "MATCH (s:Skill {conceptUri: $uri}) SET s.embedding = $embedding",
+                        uri=record['uri'], embedding=embedding
+                    )
+        
+        # Process occupations (similar logic)
+        logger.info("Generating embeddings for occupations")
+        with self.driver.session() as session:
+            query = "MATCH (o:Occupation) RETURN o.conceptUri as uri, o.preferredLabel as label, o.description as description, o.altLabels as altLabels"
+            result = session.run(query)
+            
+            for record in tqdm(result, desc="Embedding occupations"):
+                node_data = {
+                    'preferredLabel': record['label'],
+                    'description': record['description'],
+                    'altLabels': record['altLabels']
+                }
+                
+                embedding = embedding_util.generate_node_embedding(node_data)
+                if embedding:
+                    session.run(
+                        "MATCH (o:Occupation {conceptUri: $uri}) SET o.embedding = $embedding",
+                        uri=record['uri'], embedding=embedding
+                    )
+        
+        logger.info("Completed embedding generation and storage")
+
     def run_ingest(self):
         """Run the complete ingestion process"""
         try:
@@ -232,6 +304,15 @@ class ESCOIngest:
             self.create_occupation_isco_mapping()
             self.create_occupation_skill_relations()
             self.create_skill_skill_relations()
+            
+            # Add vector indexes for semantic search
+            self.create_vector_indexes()
+            
+            # Generate embeddings
+            from embedding_utils import ESCOEmbedding
+            embedding_util = ESCOEmbedding()
+            self.generate_and_store_embeddings(embedding_util)
+            
             logger.info("ESCO data ingestion completed successfully")
         except Exception as e:
             logger.error(f"Error during ingestion: {str(e)}")

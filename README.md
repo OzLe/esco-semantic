@@ -50,6 +50,8 @@ Place your ESCO CSV files in the `ESCO` directory. The tool expects the followin
 
 ## Usage
 
+### Data Ingestion
+
 Run the ingestion tool:
 ```bash
 python esco_ingest.py
@@ -67,6 +69,45 @@ The tool will:
 9. Create occupation-ISCO mappings
 10. Create occupation-skill relations
 11. Create skill-skill relations
+12. Generate and store embeddings for semantic search
+
+### Semantic Search
+
+The tool includes a command-line interface for semantic search. You can use it in two modes:
+
+1. Full pipeline (default):
+```bash
+python esco_search_cli.py --query "your search query" --password "your_password"
+```
+
+2. Search-only mode (when data is already indexed):
+```bash
+python esco_search_cli.py --query "your search query" --password "your_password" --search-only
+```
+
+Additional search options:
+- `--type`: Specify node type to search (Skill, Occupation, or Both)
+- `--limit`: Maximum number of results to return
+- `--related`: Get related graph for the top result
+- `--json`: Output results in JSON format
+
+Example with all options:
+```bash
+python esco_search_cli.py \
+    --query "machine learning" \
+    --type Skill \
+    --limit 5 \
+    --related \
+    --json \
+    --search-only \
+    --password "your_password"
+```
+
+The search functionality uses the `all-MiniLM-L6-v2` model for generating embeddings, which provides a good balance between performance and quality. The search results include:
+- Semantic similarity scores
+- Node descriptions
+- Related entities (when using --related)
+- Graph context for each result
 
 ## Data Model
 
@@ -89,6 +130,12 @@ The tool creates the following node types and relationships:
 
 The tool processes data in batches of 50,000 rows to optimize memory usage and performance. Progress is displayed using progress bars for each processing step.
 
+For semantic search:
+- Uses efficient vector indexes in Neo4j
+- Implements cosine similarity for matching
+- Supports batch processing for embedding generation
+- Includes search-only mode for faster subsequent searches
+
 ## Error Handling
 
 The tool includes comprehensive error handling and logging. Check the console output for any issues during the ingestion process.
@@ -99,6 +146,7 @@ Logs are output to the console with timestamps and log levels. The tool logs:
 - Start and completion of each ingestion step
 - Any errors encountered during the process
 - Overall completion status
+- Search operations and results
 
 ## Troubleshooting
 
@@ -109,6 +157,8 @@ If you encounter issues:
 3. Check file permissions
 4. Verify CSV file formats match the expected structure
 5. Check Neo4j logs for any database-specific issues
+6. For search issues, verify that embeddings are properly generated
+7. Check if vector indexes are created in Neo4j
 
 ## License
 

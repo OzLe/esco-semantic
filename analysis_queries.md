@@ -418,6 +418,32 @@ RETURN
     r1, r2;
 ```
 
+#### Query Examples for Semantic Search
+```cypher
+// Semantic search for skills similar to "programming"
+MATCH (s:Skill)
+WHERE s.embedding IS NOT NULL
+WITH s, vector.similarity.cosine(s.embedding, $query_embedding) AS score
+WHERE score > 0.6
+RETURN s.preferredLabel AS Skill, s.description AS Description, score
+ORDER BY score DESC
+LIMIT 10;
+
+// Find occupations that require semantically similar skills to "data analysis"
+MATCH (querySkill:Skill)
+WHERE querySkill.preferredLabel CONTAINS "data analysis"
+MATCH (s:Skill)
+WHERE s.embedding IS NOT NULL AND s <> querySkill
+WITH s, vector.similarity.cosine(s.embedding, querySkill.embedding) AS score
+WHERE score > 0.7
+MATCH (s)-[:ESSENTIAL_FOR]->(o:Occupation)
+RETURN DISTINCT o.preferredLabel AS Occupation, 
+       collect(DISTINCT s.preferredLabel) AS SimilarSkills,
+       count(DISTINCT s) AS SkillCount
+ORDER BY SkillCount DESC
+LIMIT 10;
+```
+
 ## Notes
 
 1. For advanced analysis queries:
