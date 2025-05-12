@@ -4,6 +4,9 @@ import pandas as pd
 from tqdm import tqdm
 import logging
 import argparse
+import time
+from urllib.parse import urlparse
+from neo4j.exceptions import ServiceUnavailable, AuthError, ClientError
 
 
 
@@ -16,13 +19,76 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class ESCOIngest:
-    def __init__(self, uri, user, password, esco_dir):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+    def __init__(self, uri, user, password, esco_dir, max_retries=3, retry_delay=5):
+        self.uri = uri
+        self.user = user
+        self.password = password
         self.esco_dir = esco_dir
         self.batch_size = 50000
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.driver = None
+        self._connect()
+
+    def _connect(self):
+        """Establish connection with retry logic"""
+        for attempt in range(self.max_retries):
+            try:
+                # Validate and potentially modify URI for AuraDB
+                parsed_uri = urlparse(self.uri)
+                if parsed_uri.scheme == 'neo4j+s':
+                    # AuraDB connection - ensure proper format
+                    if not self.uri.startswith('neo4j+s://'):
+                        self.uri = self.uri.replace('bolt://', 'neo4j+s://')
+                elif parsed_uri.scheme == 'bolt':
+                    # Local connection - ensure proper format
+                    if not self.uri.startswith('bolt://'):
+                        self.uri = f'bolt://{parsed_uri.netloc}'
+                
+                self.driver = GraphDatabase.driver(
+                    self.uri,
+                    auth=(self.user, self.password),
+                    max_connection_lifetime=3600,  # 1 hour
+                    max_connection_pool_size=50,
+                    connection_timeout=30
+                )
+                
+                # Test connection
+                with self.driver.session() as session:
+                    session.run("RETURN 1")
+                logger.info(f"Successfully connected to Neo4j at {self.uri}")
+                return
+                
+            except (ServiceUnavailable, AuthError, ClientError) as e:
+                if attempt < self.max_retries - 1:
+                    logger.warning(f"Connection attempt {attempt + 1} failed: {str(e)}. Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"Failed to connect after {self.max_retries} attempts: {str(e)}")
+                    raise
+
+    def _execute_with_retry(self, query, parameters=None, session=None):
+        """Execute a query with retry logic"""
+        for attempt in range(self.max_retries):
+            try:
+                if session:
+                    return session.run(query, parameters or {})
+                else:
+                    with self.driver.session() as s:
+                        return s.run(query, parameters or {})
+            except (ServiceUnavailable, ClientError) as e:
+                if attempt < self.max_retries - 1:
+                    logger.warning(f"Query attempt {attempt + 1} failed: {str(e)}. Retrying in {self.retry_delay} seconds...")
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"Failed to execute query after {self.max_retries} attempts: {str(e)}")
+                    raise
 
     def close(self):
-        self.driver.close()
+        """Close the database connection"""
+        if self.driver:
+            self.driver.close()
+            self.driver = None
 
     def delete_all_data(self):
         """Delete all nodes and relationships from the database"""
@@ -36,11 +102,11 @@ class ESCOIngest:
                 "DROP CONSTRAINT iscogroup_code IF EXISTS"
             ]
             for constraint in constraints:
-                session.run(constraint)
+                self._execute_with_retry(constraint, session=session)
             
             # Then delete all nodes and relationships
             query = "MATCH (n) DETACH DELETE n"
-            session.run(query)
+            self._execute_with_retry(query, session=session)
             logger.info("Deleted all data from the database")
 
     def create_constraints(self):
@@ -368,19 +434,34 @@ def main():
     parser = argparse.ArgumentParser(description='ESCO Data Ingestion Tool')
     
     # Neo4j connection parameters
-    parser.add_argument('--uri', type=str, default='bolt://localhost:7687', help='Neo4j URI')
+    parser.add_argument('--uri', type=str, default='bolt://localhost:7687',
+                      help='Neo4j URI (use neo4j+s:// for AuraDB)')
     parser.add_argument('--user', type=str, default='neo4j', help='Neo4j username')
     parser.add_argument('--password', type=str, required=True, help='Neo4j password')
-    parser.add_argument('--esco-dir', type=str, default='ESCO', help='Directory containing ESCO CSV files')
+    parser.add_argument('--esco-dir', type=str, default='ESCO',
+                      help='Directory containing ESCO CSV files')
+    
+    # Connection retry parameters
+    parser.add_argument('--max-retries', type=int, default=3,
+                      help='Maximum number of connection retry attempts')
+    parser.add_argument('--retry-delay', type=int, default=5,
+                      help='Delay in seconds between retry attempts')
     
     # Execution mode
-    parser.add_argument('--embeddings-only', action='store_true', 
+    parser.add_argument('--embeddings-only', action='store_true',
                       help='Run only the embedding generation and indexing (assumes ESCO graph exists)')
     
     args = parser.parse_args()
     
     # Create ingestor instance
-    ingestor = ESCOIngest(args.uri, args.user, args.password, args.esco_dir)
+    ingestor = ESCOIngest(
+        args.uri,
+        args.user,
+        args.password,
+        args.esco_dir,
+        max_retries=args.max_retries,
+        retry_delay=args.retry_delay
+    )
     
     # Run appropriate process
     if args.embeddings_only:
