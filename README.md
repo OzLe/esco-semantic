@@ -198,84 +198,87 @@ The tool includes a command-line interface for semantic search. You can use it i
 
 1. Full pipeline (default):
 ```bash
-python src/esco_search_cli.py --query "your search query" --password "your_password"
+python src/esco_search.py --query "your search query"
 ```
 
-2. Search-only mode (when data is already indexed):
+2. Embeddings-only mode:
 ```bash
-python src/esco_search_cli.py --query "your search query" --password "your_password" --search-only
+python src/esco_search.py --query "your search query" --embeddings-only
 ```
 
-Additional search options:
-- `--type`: Specify node type to search (Skill, Occupation, or Both)
-- `--limit`: Maximum number of results to return
-- `--related`: Get related graph for the top result
-- `--json`: Output results in JSON format
+### Translation to Hebrew
 
-Example with all options:
+The tool includes functionality to translate ESCO concepts to Hebrew using the MarianMT model. This feature requires downloading the model first.
+
+#### Setup
+
+1. Download the translation model:
 ```bash
-python src/esco_search_cli.py \
-    --query "machine learning" \
-    --type Skill \
-    --limit 5 \
-    --related \
-    --json \
-    --search-only \
-    --password "your_password"
+python src/download_model.py
 ```
 
-The search functionality uses the `all-MiniLM-L6-v2` model for generating embeddings, which provides a good balance between performance and quality. The search results include:
-- Semantic similarity scores
-- Node descriptions
-- Related entities (when using --related)
-- Graph context for each result
+This will download the MarianMT model and tokenizer to a local cache directory (`./model_cache`).
 
-### Hebrew Translation
+#### Usage
 
-The tool includes functionality to translate English text to Hebrew using the T5 Hebrew translation model. This is particularly useful for creating Hebrew versions of node properties.
-
-To translate node properties to Hebrew:
+Translate specific node types and properties:
 
 ```bash
-# For local Neo4j
-python src/esco_translate.py --profile default --property "preferredLabel" --type Skill
+# Translate skills
+python src/esco_translate.py --type Skill --property "preferredLabel"
 
-# For AuraDB
-python src/esco_translate.py --profile aura --property "preferredLabel" --type Skill
+# Translate occupations
+python src/esco_translate.py --type Occupation --property "preferredLabel"
+
+# Translate skill groups
+python src/esco_translate.py --type SkillGroup --property "preferredLabel"
+
+# Translate ISCO groups
+python src/esco_translate.py --type ISCOGroup --property "preferredLabel"
 ```
 
-Additional translation options:
-- `--config`: Path to custom YAML configuration file (default: config/neo4j_config.yaml)
-- `--profile`: Configuration profile to use ('default' or 'aura')
-- `--property`: The property to translate (e.g., "preferredLabel", "description")
-- `--type`: Node type to translate (Skill, Occupation, SkillGroup, or ISCOGroup)
-- `--batch-size`: Number of nodes to process in each batch (default: 100)
-- `--suffix`: Suffix for the translated property (default: "_he")
-- `--device`: Device to use for translation (cpu, cuda, or mps)
-
-Example with all options:
+Additional options:
 ```bash
 python src/esco_translate.py \
-    --config "config/neo4j_config.yaml" \
+    --config "path/to/custom/config.yaml" \
     --profile "aura" \
-    --property "preferredLabel" \
     --type Skill \
+    --property "preferredLabel" \
     --batch-size 50 \
-    --suffix "_he" \
-    --device "cuda"
+    --device cpu
 ```
 
-The translation process:
-1. Loads the T5 Hebrew translation model
-2. Processes nodes in batches to optimize memory usage
-3. Creates new properties with the specified suffix
-4. Preserves the original English text
-5. Updates the Neo4j database with translated content
+#### Device Support
 
-Note: The translation model requires additional dependencies. Install them using:
+The translation tool supports multiple devices:
+- CPU (default fallback)
+- CUDA (NVIDIA GPUs)
+- MPS (Apple Silicon Macs)
+
+To specify a device:
 ```bash
-pip install transformers torch
+python src/esco_translate.py --type Skill --property "preferredLabel" --device cpu
+python src/esco_translate.py --type Skill --property "preferredLabel" --device cuda
+python src/esco_translate.py --type Skill --property "preferredLabel" --device mps
 ```
+
+#### Troubleshooting
+
+If you encounter issues:
+
+1. Network problems:
+   - Run `python src/download_model.py` to ensure the model is cached locally
+   - Check your internet connection to huggingface.co
+
+2. Memory issues:
+   - Reduce batch size: `--batch-size 50`
+   - Use CPU: `--device cpu`
+   - Clear model cache: `rm -rf ./model_cache`
+
+3. Translation quality:
+   - The tool uses the Helsinki-NLP MarianMT model
+   - For better results, ensure input text is clean and well-formatted
+   - Long texts are automatically truncated to 512 tokens
 
 ## Data Model
 
