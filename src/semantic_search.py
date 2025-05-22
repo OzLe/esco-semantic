@@ -1,5 +1,9 @@
 import logging
 from embedding_utils import ESCOEmbedding
+from logging_config import setup_logging
+
+# Setup logging
+logger = setup_logging()
 
 class ESCOSemanticSearch:
     def __init__(self, driver, embedding_util=None):

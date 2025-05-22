@@ -11,10 +11,10 @@ from embedding_utils import ESCOEmbedding
 from esco_ingest import ESCOIngest
 from esco_translate import ESCOTranslator
 from download_model import download_model
+from logging_config import setup_logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Setup logging
+logger = setup_logging()
 
 # ANSI color codes for terminal output
 class Colors:

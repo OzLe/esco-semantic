@@ -5,8 +5,10 @@ import logging
 from urllib.parse import urlparse
 from neo4j import GraphDatabase
 from neo4j.exceptions import ServiceUnavailable, AuthError, ClientError
+from logging_config import setup_logging
 
-logger = logging.getLogger(__name__)
+# Setup logging
+logger = setup_logging()
 
 class Neo4jClient:
     def __init__(self, config_path=None, profile='default'):
