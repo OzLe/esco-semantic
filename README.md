@@ -1,6 +1,30 @@
 # ESCO Data Management and Search Tool
 
-This tool is designed for managing, searching, and translating the ESCO (European Skills, Competences, Qualifications and Occupations) taxonomy in a Neo4j graph database. It provides a unified command-line interface for data ingestion, semantic search, and translation capabilities.
+This tool is designed for managing, searching, and translating the ESCO (European Skills, Competences, Qualifications and Occupations) taxonomy using both Neo4j graph database and Weaviate vector database. It provides a unified command-line interface for data ingestion, semantic search, and translation capabilities.
+
+## Features
+
+- **Dual Database Architecture**
+  - Neo4j for graph-based relationships and complex queries
+  - Weaviate for high-performance vector search
+  - Automatic synchronization between both databases
+
+- **Semantic Search**
+  - Vector-based semantic search using HNSW index
+  - Support for both occupations and skills
+  - Configurable similarity thresholds
+  - Rich result formatting with related skills
+
+- **Data Management**
+  - Batch ingestion with automatic retries
+  - Cross-references between entities
+  - Support for multiple languages
+  - Efficient vector indexing
+
+- **Translation**
+  - Neural machine translation support
+  - Batch processing capabilities
+  - Multiple language pair support
 
 ## Disclaimer
 
@@ -10,264 +34,133 @@ This tool is provided "AS IS", without warranty of any kind, express or implied,
 
 - Python 3.8 or higher
 - Neo4j Database (version 5.x) or Neo4j AuraDB
+- Weaviate Vector Database (version 1.25)
 - ESCO CSV files (v1.2.0 or compatible)
 - Docker and Docker Compose (for containerized deployment)
 
-## Environment Setup
+## Quick Start
 
-### Using Docker (Recommended)
-
-The easiest way to run the application is using Docker Compose:
-
-1. Build and start the containers:
-```bash
-docker-compose up -d
-```
-
-2. Check the logs:
-```bash
-docker-compose logs -f
-```
-
-The application will automatically connect to Neo4j once it's healthy.
-
-### Using Conda (Alternative)
-
-The easiest way to set up the environment is using the provided `environment.yml` file:
-
-1. Create and activate the environment:
-```bash
-conda env create -f environment.yml
-conda activate esco
-```
-
-2. Verify the installation:
-```bash
-python - <<'PY'
-import tiktoken, sentencepiece, google.protobuf, transformers
-print("All critical libraries imported successfully.")
-PY
-```
-
-### Configuration
-
-The tool uses a YAML configuration file for Neo4j connection settings. To set up:
-
-1. Copy the sample configuration:
-```bash
-cp config/neo4j_config.sample.yaml config/neo4j_config.yaml
-```
-
-2. Edit `config/neo4j_config.yaml` with your Neo4j connection details:
-   - For local Neo4j: Use the `default` profile
-   - For AuraDB: Use the `aura` profile
-
-3. Alternatively, you can set environment variables:
-```bash
-# For local Neo4j
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="your-password"
-export NEO4J_PROFILE="default"
-
-# For AuraDB
-export NEO4J_URI="neo4j+s://your-instance-id.databases.neo4j.io"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="your-password"
-export NEO4J_PROFILE="aura"
-
-# Optional configuration
-export NEO4J_MAX_RETRIES=5
-export NEO4J_RETRY_DELAY=10
-export NEO4J_MAX_CONNECTION_LIFETIME=1800
-export NEO4J_MAX_CONNECTION_POOL_SIZE=100
-export NEO4J_CONNECTION_TIMEOUT=60
-```
-
-### Docker Configuration
-
-The application is configured to run in two containers:
-
-1. **Neo4j Container**:
-   - Runs Neo4j 5.14.0
-   - Exposes ports 7474 (HTTP) and 7687 (Bolt)
-   - Uses persistent volumes for data, logs, and plugins
-   - Includes health checks
-   - Configurable through environment variables
-
-2. **ESCO Application Container**:
-   - Runs the Python application
-   - Connects to Neo4j using environment variables
-   - Mounts data and logs directories
-   - Waits for Neo4j to be healthy before starting
-
-To customize the Docker setup:
-
-1. Edit `docker-compose.yml`:
-```yaml
-services:
-  neo4j:
-    environment:
-      - NEO4J_AUTH=neo4j/your-password
-      - NEO4J_dbms_memory_pagecache_size=1G
-      # ... other Neo4j settings
-
-  esco-app:
-    environment:
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=your-password
-      # ... other application settings
-```
-
-2. For AuraDB, update the Neo4j connection:
-```yaml
-services:
-  esco-app:
-    environment:
-      - NEO4J_URI=neo4j+s://your-instance-id.databases.neo4j.io
-      - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=your-aura-password
-      - NEO4J_PROFILE=aura
-```
-
-### Apple Silicon (M1/M2/M3) Notes
-
-The `environment.yml` file is already configured for Apple Silicon Macs and includes:
-- Native ARM64 builds for PyTorch with MPS support
-- Properly pinned dependencies for compatibility
-- Required system libraries through conda-forge
-
-If you encounter any issues:
-
-1. Ensure you're using the latest conda:
-```bash
-conda update -n base conda
-```
-
-2. Make sure user-site packages are not injected:
-```bash
-# inside the conda shell:
-export PYTHONNOUSERSITE=1   # or add this in your ~/.zshrc
-```
-
-3. For diagnostic checks:
-```bash
-python - <<'PY'
-import importlib.util, subprocess, sys, os
-lib = importlib.util.find_spec('PIL._imaging').origin
-print("Pillow C-extension:", lib)
-print("Linked against:")
-subprocess.check_call(["otool", "-L", lib])
-PY
-```
-
-The output should list **$CONDA_PREFIX/lib/libjpeg.**dylib, not /usr/local/lib or /opt/homebrew/lib.
-
-## Installation
-
-1. Clone this repository:
+1. Clone the repository:
 ```bash
 git clone <repository-url>
 cd ESCO-Ingest
 ```
 
-2. Choose your setup method:
-   - For Docker: Follow the Docker setup instructions
-   - For local development: Follow the Conda setup instructions
-
-3. Configure your Neo4j connection as described in the Configuration section.
-
-## Directory Structure
-
-```
-ESCO-Ingest/
-├── config/
-│   ├── neo4j_config.sample.yaml  # Sample configuration (safe to commit)
-│   └── neo4j_config.yaml         # Your configuration (gitignored)
-├── src/
-│   ├── esco_cli.py              # Unified CLI interface
-│   ├── esco_ingest.py           # Data ingestion implementation
-│   ├── neo4j_client.py          # Neo4j client implementation
-│   ├── embedding_utils.py       # Embedding generation utilities
-│   ├── semantic_search.py       # Semantic search implementation
-│   ├── esco_translate.py        # Translation implementation
-│   └── download_model.py        # Model download utility
-├── ESCO/                        # ESCO data directory (gitignored)
-│   ├── skillGroups_en.csv
-│   ├── skills_en.csv
-│   ├── occupations_en.csv
-│   ├── ISCOGroups_en.csv
-│   ├── broaderRelationsSkillPillar_en.csv
-│   ├── broaderRelationsOccPillar_en.csv
-│   ├── occupationSkillRelations_en.csv
-│   └── skillSkillRelations_en.csv
-├── docker-compose.yml          # Docker Compose configuration
-├── Dockerfile                 # Docker build configuration
-├── environment.yml            # Conda environment definition
-├── requirements.txt          # Pip requirements
-└── README.md                 # This file
+2. Start the services:
+```bash
+docker-compose up -d
 ```
 
-Place your ESCO CSV files in the `ESCO` directory. The tool expects the following files:
-- `skillGroups_en.csv`
-- `skills_en.csv`
-- `occupations_en.csv`
-- `ISCOGroups_en.csv`
-- `broaderRelationsSkillPillar_en.csv`
-- `broaderRelationsOccPillar_en.csv`
-- `occupationSkillRelations_en.csv`
-- `skillSkillRelations_en.csv`
+3. Ingest data:
+```bash
+# Ingest into Neo4j
+python src/esco_cli.py ingest --config config/neo4j_config.yaml
+
+# Ingest into Weaviate
+python src/esco_cli.py ingest-weaviate --config config/weaviate_config.yaml
+```
+
+4. Search the data:
+```bash
+# Search using Neo4j
+python src/esco_cli.py search --query "python programming"
+
+# Search using Weaviate
+python src/esco_cli.py search-weaviate --query "python programming"
+```
+
+## Architecture
+
+### Database Integration
+
+The tool uses a dual-database architecture:
+
+1. **Neo4j**
+   - Stores graph relationships
+   - Handles complex queries
+   - Manages entity properties
+   - Supports Cypher queries
+
+2. **Weaviate**
+   - Stores vector embeddings
+   - Provides semantic search
+   - Manages cross-references
+   - Uses HNSW indexing
+
+### Data Flow
+
+```mermaid
+graph TD
+    A[ESCO CSV Files] --> B[Ingestion]
+    B --> C[Neo4j (Graph)]
+    C --> D[Weaviate (Vector)]
+    D --> E[Search API]
+```
+
+## Configuration
+
+### Neo4j Configuration
+
+Create `config/neo4j_config.yaml`:
+```yaml
+default:
+  uri: "bolt://localhost:7687"
+  user: "neo4j"
+  password: "your-password"
+  max_retries: 3
+  retry_delay: 5
+  max_connection_lifetime: 3600
+  max_connection_pool_size: 50
+  connection_timeout: 30
+```
+
+### Weaviate Configuration
+
+Create `config/weaviate_config.yaml`:
+```yaml
+default:
+  url: "http://localhost:8080"
+  vector_index_config:
+    distance: "cosine"
+    efConstruction: 128
+    maxConnections: 64
+  batch_size: 100
+  retry_attempts: 3
+  retry_delay: 5
+```
 
 ## Usage
-
-The tool provides a unified command-line interface (`esco_cli.py`) with several subcommands:
-
-### General Help
-
-```bash
-# Show general help
-python src/esco_cli.py --help
-
-# Show help for a specific command
-python src/esco_cli.py search --help
-```
-
-### Download Translation Model
-
-```bash
-python src/esco_cli.py download-model
-```
 
 ### Data Ingestion
 
 ```bash
-# Full ingestion
+# Ingest into Neo4j
 python src/esco_cli.py ingest --config config/neo4j_config.yaml
 
-# Embeddings only
-python src/esco_cli.py ingest --config config/neo4j_config.yaml --embeddings-only
+# Ingest into Weaviate
+python src/esco_cli.py ingest-weaviate --config config/weaviate_config.yaml
 
-# Delete existing data and re-ingest
-python src/esco_cli.py ingest --config config/neo4j_config.yaml --delete-all
+# Delete and re-ingest
+python src/esco_cli.py ingest-weaviate --config config/weaviate_config.yaml --delete-all
 ```
 
 ### Semantic Search
 
 ```bash
-# Basic search
-python src/esco_cli.py search --query "python programming"
+# Search using Neo4j
+python src/esco_cli.py search --query "python programming" --type Skill
+
+# Search using Weaviate
+python src/esco_cli.py search-weaviate --query "python programming" --limit 5
 
 # Search with options
-python src/esco_cli.py search \
+python src/esco_cli.py search-weaviate \
     --query "python programming" \
-    --type Skill \
     --limit 5 \
-    --threshold 0.7 \
-    --related
+    --certainty 0.7
 
 # JSON output
-python src/esco_cli.py search --query "python programming" --json
+python src/esco_cli.py search-weaviate --query "python programming" --json
 ```
 
 ### Translation
@@ -284,157 +177,161 @@ python src/esco_cli.py translate \
     --device mps
 ```
 
-## Output Format
+## Data Models
 
-The CLI provides structured, color-coded output for better readability:
+### Neo4j Graph Model
 
-### Search Results
-```
-========================================================================
- ESCO Semantic Search 
-========================================================================
+Nodes:
+- `Skill`: Individual skills
+- `SkillGroup`: Groups of skills
+- `Occupation`: Occupations
+- `ISCOGroup`: ISCO classification groups
 
-Query: python programming
-Type: Skill
-Threshold: 0.5
+Relationships:
+- `BROADER_THAN`: Hierarchical relationships
+- `PART_OF_ISCOGROUP`: Occupation-ISCO links
+- `ESSENTIAL_FOR`: Essential skill links
+- `OPTIONAL_FOR`: Optional skill links
+- `RELATED_SKILL`: Related skill links
 
-----------------------------------------------------------------
- Searching... 
-----------------------------------------------------------------
+### Weaviate Vector Model
 
-----------------------------------------------------------------
- Search Results 
-----------------------------------------------------------------
+Collections:
+1. **Occupation**
+   - Properties:
+     - `conceptUri` (string)
+     - `preferredLabel` (text)
+     - `description` (text)
+   - Vector: 384-dimensional embedding
+   - Cross-references:
+     - `hasEssentialSkill` → Skill
+     - `hasOptionalSkill` → Skill
 
-1. [Skill] Python Programming (Score: 0.9234)
-   Description: The ability to write and maintain Python code...
-
-2. [Skill] Python Development (Score: 0.8912)
-   Description: Experience in developing applications using Python...
-```
-
-### Related Entities
-```
-----------------------------------------------------------------
- Related entities for 'Python Programming' 
-----------------------------------------------------------------
-
-Essential Skills (3):
-  • Object-Oriented Programming
-  • Software Development
-  • Version Control
-
-Optional Skills (5):
-  • Web Development
-  • Database Management
-  • ... and 2 more
-```
-
-### Progress and Status
-```
-========================================================================
- ESCO Data Ingestion 
-========================================================================
-
-----------------------------------------------------------------
- Starting Ingestion 
-----------------------------------------------------------------
-
-Running full ingestion...
-✓ Ingestion completed successfully
-```
-
-## Configuration Profiles
-
-The tool supports two configuration profiles:
-
-### Default Profile (Local Development)
-```yaml
-default:
-  uri: "bolt://localhost:7687"
-  user: "neo4j"
-  password: "your-password"
-  max_retries: 3
-  retry_delay: 5
-  max_connection_lifetime: 3600
-  max_connection_pool_size: 50
-  connection_timeout: 30
-```
-
-### Aura Profile (Production)
-```yaml
-aura:
-  uri: "neo4j+s://your-instance-id.databases.neo4j.io"
-  user: "neo4j"
-  password: "your-password"
-  max_retries: 5
-  retry_delay: 10
-  max_connection_lifetime: 1800
-  max_connection_pool_size: 100
-  connection_timeout: 60
-```
-
-## Data Model
-
-The tool creates the following node types and relationships:
-
-### Nodes
-- `Skill`: Represents individual skills
-- `SkillGroup`: Represents groups of skills
-- `Occupation`: Represents occupations
-- `ISCOGroup`: Represents ISCO classification groups
-
-### Relationships
-- `BROADER_THAN`: Hierarchical relationships between skills and ISCO groups
-- `PART_OF_ISCOGROUP`: Links occupations to their ISCO groups
-- `ESSENTIAL_FOR`: Links essential skills to occupations
-- `OPTIONAL_FOR`: Links optional skills to occupations
-- `RELATED_SKILL`: Links related skills with their relationship type
+2. **Skill**
+   - Properties:
+     - `conceptUri` (string)
+     - `preferredLabel` (text)
+     - `description` (text)
+   - Vector: 384-dimensional embedding
 
 ## Performance
 
-The tool processes data in batches to optimize memory usage and performance:
-- Default batch size: 50,000 rows for ingestion
-- Configurable batch size for translation
-- Efficient vector indexes for semantic search
+### Batch Processing
+- Neo4j: 50,000 rows per batch
+- Weaviate: 100 rows per batch
+- Automatic retries for failed operations
+
+### Search Performance
+- HNSW index for fast vector search
+- Configurable index parameters
 - Support for multiple devices (CPU, CUDA, MPS)
 
-## Error Handling
+### Memory Usage
+- Efficient vector storage
+- Configurable batch sizes
+- Automatic garbage collection
 
-The tool includes comprehensive error handling:
-- Clear error messages with color coding
-- Proper resource cleanup
-- Validation of configuration and input
-- Graceful handling of connection issues
+## Monitoring
+
+### Health Checks
+- Neo4j: HTTP endpoint (7474)
+- Weaviate: Ready endpoint (8080)
+- Automatic container restart
+
+### Logging
+- Structured logging to `logs/esco.log`
+- Console output with color coding
+- Error tracking and reporting
 
 ## Troubleshooting
 
-If you encounter issues:
+### Common Issues
 
-1. Configuration:
-   - Verify Neo4j connection details
-   - Check config file permissions
-   - Ensure correct profile is selected
+1. **Connection Problems**
+   - Verify database URLs
+   - Check credentials
+   - Ensure ports are accessible
 
-2. Data:
-   - Verify all required CSV files are present
+2. **Ingestion Failures**
    - Check CSV file formats
-   - Ensure proper file permissions
+   - Verify file permissions
+   - Monitor memory usage
 
-3. Search:
-   - Verify embeddings are generated
-   - Check vector indexes in Neo4j
-   - Try search-only mode if needed
+3. **Search Issues**
+   - Verify embeddings generation
+   - Check index status
+   - Monitor search latency
 
-4. Translation:
-   - Ensure model is downloaded
-   - Check device compatibility
-   - Adjust batch size if needed
+### Debugging
+
+1. Enable verbose logging:
+```bash
+export LOG_LEVEL=DEBUG
+```
+
+2. Check container logs:
+```bash
+docker-compose logs -f
+```
+
+3. Monitor database status:
+```bash
+# Neo4j
+curl http://localhost:7474
+
+# Weaviate
+curl http://localhost:8080/v1/.well-known/ready
+```
+
+## Development
+
+### Project Structure
+```
+ESCO-Ingest/
+├── config/
+│   ├── neo4j_config.yaml
+│   └── weaviate_config.yaml
+├── src/
+│   ├── esco_cli.py
+│   ├── weaviate_client.py
+│   ├── weaviate_search.py
+│   └── ...
+├── ESCO/
+│   └── *.csv
+└── docker-compose.yml
+```
+
+### Adding Features
+
+1. **New Search Engine**
+   - Implement search interface
+   - Add configuration options
+   - Update CLI commands
+
+2. **Data Processing**
+   - Add new data sources
+   - Implement transformers
+   - Update ingestion pipeline
+
+3. **API Integration**
+   - Add new endpoints
+   - Implement authentication
+   - Add rate limiting
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Contributing
+## Acknowledgments
 
-This is a simple tool for testing and visualization purposes. While contributions are welcome, please note that this is not intended for production use. If you find any issues or have suggestions for improvements, feel free to open an issue or submit a pull request. 
+- ESCO for the taxonomy data
+- Neo4j for the graph database
+- Weaviate for the vector database
+- All contributors and users 

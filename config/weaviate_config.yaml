@@ -1,0 +1,19 @@
+default:
+  url: "http://localhost:8080"
+  vector_index_config:
+    distance: "cosine"
+    efConstruction: 128
+    maxConnections: 64
+  batch_size: 100
+  retry_attempts: 3
+  retry_delay: 5
+
+aura:
+  url: "http://weaviate:8080"
+  vector_index_config:
+    distance: "cosine"
+    efConstruction: 128
+    maxConnections: 64
+  batch_size: 100
+  retry_attempts: 5
+  retry_delay: 10 

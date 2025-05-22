@@ -2,9 +2,17 @@
 FROM neo4j:5.11.0
 
 # Application image
-FROM python:3.9-slim
+FROM python:3.10-slim-bullseye
 
 WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    python3-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
 COPY requirements.txt .

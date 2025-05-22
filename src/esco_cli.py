@@ -8,10 +8,17 @@ from datetime import datetime
 from neo4j import GraphDatabase
 from semantic_search import ESCOSemanticSearch
 from embedding_utils import ESCOEmbedding
-from esco_ingest import ESCOIngest
+from esco_ingest import create_ingestor
 from esco_translate import ESCOTranslator
 from download_model import download_model
 from logging_config import setup_logging
+import click
+from pathlib import Path
+from typing import Optional
+from .weaviate_search import WeaviateSearchEngine
+from .weaviate_client import WeaviateClient
+from .embedding_utils import generate_embeddings
+import pandas as pd
 
 # Setup logging
 logger = setup_logging()
@@ -272,20 +279,20 @@ Examples:
 
             if args.command == 'ingest':
                 print_header("ESCO Data Ingestion")
-                ingest = ESCOIngest(args.config, args.profile)
+                ingestor = create_ingestor(args.config, args.profile)
                 if args.delete_all:
                     print_section("Deleting Existing Data")
-                    ingest.delete_all_data()
+                    ingestor.delete_all_data()
                     print(colorize("✓ All data deleted", Colors.GREEN))
                 
                 print_section("Starting Ingestion")
                 if args.embeddings_only:
                     print("Generating embeddings only...")
-                    ingest.run_embeddings_only()
+                    ingestor.run_embeddings_only()
                 else:
                     print("Running full ingestion...")
-                    ingest.run_ingest()
-                ingest.close()
+                    ingestor.run_ingest()
+                ingestor.close()
                 print(colorize("\n✓ Ingestion completed successfully", Colors.GREEN))
 
             elif args.command == 'search':
@@ -379,6 +386,74 @@ Examples:
     finally:
         if 'driver' in locals():
             driver.close()
+
+@click.group()
+def cli():
+    """ESCO Data Management and Search Tool"""
+    pass
+
+@cli.command()
+@click.option('--db-type', type=click.Choice(['neo4j', 'weaviate']), required=True,
+              help='Type of database to ingest into')
+@click.option('--config', type=str, help='Path to configuration file')
+@click.option('--profile', default='default', help='Configuration profile to use')
+@click.option('--delete-all', is_flag=True, help='Delete all existing data before ingestion')
+@click.option('--embeddings-only', is_flag=True, help='Run only the embedding generation and indexing')
+def ingest(db_type: str, config: str, profile: str, delete_all: bool, embeddings_only: bool):
+    """Ingest ESCO data into the specified database."""
+    try:
+        # Create ingestor instance
+        ingestor = create_ingestor(db_type, config, profile)
+        
+        if delete_all:
+            click.echo("Deleting all existing data...")
+            ingestor.delete_all_data()
+        
+        # Run appropriate process
+        if embeddings_only:
+            click.echo("Running embeddings-only mode...")
+            ingestor.run_embeddings_only()
+        else:
+            click.echo("Running full ingestion...")
+            ingestor.run_ingest()
+        
+        click.echo("Ingestion completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"Ingestion failed: {str(e)}")
+        raise click.ClickException(str(e))
+    finally:
+        ingestor.close()
+
+@cli.command()
+@click.option('--query', required=True, help='Search query')
+@click.option('--limit', default=10, help='Maximum number of results')
+@click.option('--certainty', default=0.75, help='Minimum similarity threshold (0-1)')
+@click.option('--config', default='config/weaviate_config.yaml', help='Path to Weaviate configuration file')
+@click.option('--profile', default='default', help='Configuration profile to use')
+@click.option('--json', is_flag=True, help='Output results in JSON format')
+def search_weaviate(query: str, limit: int, certainty: float, config: str, profile: str, json: bool):
+    """Search ESCO data using Weaviate."""
+    try:
+        # Initialize search engine
+        engine = WeaviateSearchEngine(config, profile)
+        
+        # Perform search
+        results = engine.search(
+            query=query,
+            limit=limit,
+            certainty=certainty
+        )
+        
+        # Output results
+        if json:
+            click.echo(json.dumps(results, indent=2))
+        else:
+            click.echo(engine.format_results(results))
+            
+    except Exception as e:
+        logger.error(f"Search failed: {str(e)}")
+        raise click.ClickException(str(e))
 
 if __name__ == "__main__":
     main() 
