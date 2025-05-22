@@ -235,9 +235,9 @@ Examples:
 
             if args.command == 'ingest':
                 print_header("ESCO Data Ingestion")
+                ingest = ESCOIngest(args.config, args.profile)
                 if args.delete_all:
                     print_section("Deleting Existing Data")
-                    ingest = ESCOIngest(args.config, args.profile)
                     ingest.delete_all_data()
                     print(colorize("✓ All data deleted", Colors.GREEN))
                 
