@@ -82,10 +82,13 @@ class ESCOIngest:
         df = pd.read_csv(file_path)
         total_rows = len(df)
         
-        for start_idx in tqdm(range(0, total_rows, self.batch_size), desc=f"Processing {os.path.basename(file_path)}"):
-            end_idx = min(start_idx + self.batch_size, total_rows)
-            batch = df.iloc[start_idx:end_idx]
-            process_func(batch)
+        with tqdm(total=total_rows, desc=f"Processing {os.path.basename(file_path)}", unit="rows",
+                 bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+            for start_idx in range(0, total_rows, self.batch_size):
+                end_idx = min(start_idx + self.batch_size, total_rows)
+                batch = df.iloc[start_idx:end_idx]
+                process_func(batch)
+                pbar.update(len(batch))
 
     def ingest_skill_groups(self):
         def process_batch(batch):
@@ -310,44 +313,60 @@ class ESCOIngest:
         # Process skills
         logger.info("Generating embeddings for skills")
         with self.client.driver.session() as session:
+            # Get total count of skills
+            count_query = "MATCH (s:Skill) RETURN count(s) as count"
+            total_skills = session.run(count_query).single()["count"]
+            
             # Get skills in batches
             query = "MATCH (s:Skill) RETURN s.conceptUri as uri, s.preferredLabel as label, s.description as description, s.altLabels as altLabels"
             result = session.run(query)
             
-            for record in tqdm(result, desc="Embedding skills"):
-                node_data = {
-                    'preferredLabel': record['label'],
-                    'description': record['description'],
-                    'altLabels': record['altLabels']
-                }
-                
-                embedding = embedding_util.generate_node_embedding(node_data)
-                if embedding:
-                    # Store embedding back in Neo4j
-                    session.run(
-                        "MATCH (s:Skill {conceptUri: $uri}) SET s.embedding = $embedding",
-                        uri=record['uri'], embedding=embedding
-                    )
+            # Create a single progress bar for all skills
+            with tqdm(total=total_skills, desc="Embedding skills", unit="skills", 
+                     bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+                for record in result:
+                    node_data = {
+                        'preferredLabel': record['label'],
+                        'description': record['description'],
+                        'altLabels': record['altLabels']
+                    }
+                    
+                    embedding = embedding_util.generate_node_embedding(node_data)
+                    if embedding:
+                        # Store embedding back in Neo4j
+                        session.run(
+                            "MATCH (s:Skill {conceptUri: $uri}) SET s.embedding = $embedding",
+                            uri=record['uri'], embedding=embedding
+                        )
+                    pbar.update(1)
         
-        # Process occupations (similar logic)
+        # Process occupations
         logger.info("Generating embeddings for occupations")
         with self.client.driver.session() as session:
+            # Get total count of occupations
+            count_query = "MATCH (o:Occupation) RETURN count(o) as count"
+            total_occupations = session.run(count_query).single()["count"]
+            
             query = "MATCH (o:Occupation) RETURN o.conceptUri as uri, o.preferredLabel as label, o.description as description, o.altLabels as altLabels"
             result = session.run(query)
             
-            for record in tqdm(result, desc="Embedding occupations"):
-                node_data = {
-                    'preferredLabel': record['label'],
-                    'description': record['description'],
-                    'altLabels': record['altLabels']
-                }
-                
-                embedding = embedding_util.generate_node_embedding(node_data)
-                if embedding:
-                    session.run(
-                        "MATCH (o:Occupation {conceptUri: $uri}) SET o.embedding = $embedding",
-                        uri=record['uri'], embedding=embedding
-                    )
+            # Create a single progress bar for all occupations
+            with tqdm(total=total_occupations, desc="Embedding occupations", unit="occupations",
+                     bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+                for record in result:
+                    node_data = {
+                        'preferredLabel': record['label'],
+                        'description': record['description'],
+                        'altLabels': record['altLabels']
+                    }
+                    
+                    embedding = embedding_util.generate_node_embedding(node_data)
+                    if embedding:
+                        session.run(
+                            "MATCH (o:Occupation {conceptUri: $uri}) SET o.embedding = $embedding",
+                            uri=record['uri'], embedding=embedding
+                        )
+                    pbar.update(1)
         
         logger.info("Completed embedding generation and storage")
 
