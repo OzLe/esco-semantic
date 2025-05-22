@@ -278,22 +278,26 @@ class ESCOIngest:
                     session.run("""
                         CREATE VECTOR INDEX skill_embedding IF NOT EXISTS
                         FOR (s:Skill)
-                        ON s.embedding
-                        OPTIONS {indexConfig: {
-                            `vector.dimensions`: 384,
-                            `vector.similarity_function`: 'cosine'
-                        }}
+                        ON (s.embedding)
+                        OPTIONS {
+                            indexConfig: {
+                                `vector.dimensions`: 384,
+                                `vector.similarity_function`: 'cosine'
+                            }
+                        }
                     """)
                     
                     # Create vector indexes for occupations
                     session.run("""
                         CREATE VECTOR INDEX occupation_embedding IF NOT EXISTS
                         FOR (o:Occupation)
-                        ON o.embedding
-                        OPTIONS {indexConfig: {
-                            `vector.dimensions`: 384,
-                            `vector.similarity_function`: 'cosine'
-                        }}
+                        ON (o.embedding)
+                        OPTIONS {
+                            indexConfig: {
+                                `vector.dimensions`: 384,
+                                `vector.similarity_function`: 'cosine'
+                            }
+                        }
                     """)
                     logger.info("Created vector indexes for semantic search")
                 else:
