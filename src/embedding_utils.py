@@ -2,6 +2,7 @@ from sentence_transformers import SentenceTransformer
 import logging
 from tqdm import tqdm
 from typing import List, Dict, Any
+import sys
 
 class ESCOEmbedding:
     def __init__(self, model_name='all-MiniLM-L6-v2'):
@@ -15,7 +16,8 @@ class ESCOEmbedding:
         """Generate embedding for a single text"""
         if not text:
             return None
-        return self.model.encode(text).tolist()
+        # Disable SentenceTransformers' internal progress bar to keep output clean
+        return self.model.encode(text, show_progress_bar=False).tolist()
     
     def generate_node_embedding(self, node_data):
         """Generate embedding from node data combining label and description"""
@@ -48,8 +50,16 @@ class ESCOEmbedding:
         processed_count = 0
         failed_count = 0
         
-        # Create a single progress bar for the entire process
-        with tqdm(total=total_nodes, desc="Generating embeddings", unit="nodes") as pbar:
+        # Show a single clean progress bar for the whole batch
+        with tqdm(
+            total=total_nodes,
+            desc="Generating embeddings",
+            unit="nodes",
+            dynamic_ncols=True,
+            smoothing=0.1,
+            disable=False,      # Force display even in non‑TTY contexts
+            leave=True
+        ) as pbar:
             for i in range(0, total_nodes, batch_size):
                 batch = nodes[i:i + batch_size]
                 
@@ -69,8 +79,8 @@ class ESCOEmbedding:
                     processed_count += 1
                     pbar.update(1)
                     
-                    # Log progress every 100 nodes
-                    if processed_count % 100 == 0 or processed_count == total_nodes:
+                    # Log progress every 1000 nodes instead of 100
+                    if processed_count % 1000 == 0 or processed_count == total_nodes:
                         self.logger.info(f"Processed {processed_count}/{total_nodes} nodes (Success: {len(results)}, Failed: {failed_count})")
         
         success_rate = (len(results) / total_nodes) * 100

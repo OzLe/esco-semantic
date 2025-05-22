@@ -169,6 +169,12 @@ def setup_logging(level=logging.INFO):
     logging.getLogger('neo4j').setLevel(logging.WARNING)  # Reduce Neo4j driver logging
     logging.getLogger('urllib3').setLevel(logging.WARNING)  # Reduce urllib3 logging
     logging.getLogger('tqdm').setLevel(logging.WARNING)  # Reduce tqdm logging
+    logging.getLogger('sentence_transformers').setLevel(logging.WARNING)  # Reduce sentence-transformers logging
+    logging.getLogger('transformers').setLevel(logging.WARNING)  # Reduce transformers logging
+    
+    # Disable tqdm progress bars for specific modules
+    import tqdm
+    tqdm.tqdm.monitor_interval = 0  # Disable tqdm monitoring
     
     return logging.getLogger(__name__)
 

@@ -276,8 +276,8 @@ class ESCOIngest:
                 version = version_result['versions'][0]
                 major, minor, patch = map(int, version.split('.')[:3])
                 
-                if major > 5 or (major == 5 and minor >= 11):
-                    # Create vector indexes for skills
+                if major > 5 or (major == 5 and minor >= 15):
+                    # New vector index syntax for Neo4j 5.15+
                     session.run("""
                         CREATE VECTOR INDEX skill_embedding IF NOT EXISTS
                         FOR (s:Skill)
@@ -290,7 +290,6 @@ class ESCOIngest:
                         }
                     """)
                     
-                    # Create vector indexes for occupations
                     session.run("""
                         CREATE VECTOR INDEX occupation_embedding IF NOT EXISTS
                         FOR (o:Occupation)
@@ -302,9 +301,31 @@ class ESCOIngest:
                             }
                         }
                     """)
-                    logger.info("Created vector indexes for semantic search")
+                elif major == 5 and minor >= 11:
+                    # Old vector index syntax for Neo4j 5.11-5.14
+                    session.run("""
+                        CALL db.index.vector.createNodeIndex(
+                            'skill_embedding',
+                            'Skill',
+                            'embedding',
+                            384,
+                            'cosine'
+                        )
+                    """)
+                    
+                    session.run("""
+                        CALL db.index.vector.createNodeIndex(
+                            'occupation_embedding',
+                            'Occupation',
+                            'embedding',
+                            384,
+                            'cosine'
+                        )
+                    """)
                 else:
                     logger.warning(f"Vector indexes are not supported in Neo4j version {version}. Skipping vector index creation.")
+                
+                logger.info("Created vector indexes for semantic search")
         except Exception as e:
             logger.warning(f"Could not create vector indexes: {str(e)}. Continuing without vector indexes.")
 
