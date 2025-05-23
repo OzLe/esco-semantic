@@ -134,11 +134,7 @@ def load_config(config_path=None, profile='default'):
     return config
 
 def setup_logging(level=logging.INFO):
-    """Setup logging configuration for all modules
-    
-    Args:
-        level (int): Logging level (default: logging.INFO)
-    """
+    """Setup logging configuration for all modules"""
     # Create logs directory if it doesn't exist
     os.makedirs('logs', exist_ok=True)
     
@@ -156,14 +152,14 @@ def setup_logging(level=logging.INFO):
     )
     
     # Set specific logger levels
-    logging.getLogger('urllib3').setLevel(logging.WARNING)  # Reduce urllib3 logging
-    logging.getLogger('tqdm').setLevel(logging.WARNING)  # Reduce tqdm logging
-    logging.getLogger('sentence_transformers').setLevel(logging.WARNING)  # Reduce sentence-transformers logging
-    logging.getLogger('transformers').setLevel(logging.WARNING)  # Reduce transformers logging
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('tqdm').setLevel(logging.WARNING)
+    logging.getLogger('sentence_transformers').setLevel(logging.WARNING)
+    logging.getLogger('transformers').setLevel(logging.WARNING)
     
     # Disable tqdm progress bars for specific modules
     import tqdm
-    tqdm.tqdm.monitor_interval = 0  # Disable tqdm monitoring
+    tqdm.tqdm.monitor_interval = 0
     
     return logging.getLogger(__name__)
 
@@ -208,11 +204,16 @@ Examples:
     ingest_parser = subparsers.add_parser('ingest', parents=[common_parser], help='Ingest ESCO data')
     ingest_parser.add_argument('--embeddings-only', action='store_true', help='Only generate embeddings')
     ingest_parser.add_argument('--delete-all', action='store_true', help='Delete all data before ingestion')
+    ingest_parser.add_argument('--classes', nargs='+', choices=['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection'],
+                             help='Specific classes to ingest')
+    ingest_parser.add_argument('--skip-relations', action='store_true',
+                             help='Skip creating relationships between entities')
 
     # Search command
     search_parser = subparsers.add_parser('search', parents=[common_parser], help='Search ESCO data')
     search_parser.add_argument('--query', type=str, required=True, help='Text query for semantic search')
-    search_parser.add_argument('--type', type=str, default='Skill', choices=['Skill', 'Occupation', 'Both'],
+    search_parser.add_argument('--type', type=str, default='Skill',
+                             choices=['Skill', 'Occupation', 'ISCOGroup', 'SkillCollection', 'All'],
                              help='Type of nodes to search')
     search_parser.add_argument('--limit', type=int, default=10, help='Maximum number of results')
     search_parser.add_argument('--threshold', type=float, default=0.5,
@@ -242,18 +243,45 @@ Examples:
             if args.command == 'ingest':
                 print_header("ESCO Data Ingestion")
                 ingestor = create_ingestor(args.config, args.profile)
+                
                 if args.delete_all:
                     print_section("Deleting Existing Data")
                     ingestor.delete_all_data()
                     print(colorize("✓ All data deleted", Colors.GREEN))
                 
                 print_section("Starting Ingestion")
+                
+                # Determine which classes to ingest
+                classes_to_ingest = args.classes if args.classes else ['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']
+                
                 if args.embeddings_only:
                     print("Generating embeddings only...")
                     ingestor.run_embeddings_only()
                 else:
-                    print("Running full ingestion...")
-                    ingestor.run_ingest()
+                    print("Running ingestion for classes:", ", ".join(classes_to_ingest))
+                    if args.skip_relations:
+                        print("Skipping relationship creation")
+                    
+                    # Run ingestion for each selected class
+                    for class_name in classes_to_ingest:
+                        print_section(f"Ingesting {class_name}")
+                        if class_name == 'Occupation':
+                            ingestor.ingest_occupations()
+                        elif class_name == 'Skill':
+                            ingestor.ingest_skills()
+                        elif class_name == 'ISCOGroup':
+                            ingestor.ingest_isco_groups()
+                        elif class_name == 'SkillCollection':
+                            ingestor.ingest_skill_collections()
+                    
+                    # Create relationships if not skipped
+                    if not args.skip_relations:
+                        print_section("Creating Relationships")
+                        ingestor.create_skill_relations()
+                        ingestor.create_hierarchical_relations()
+                        ingestor.create_isco_group_relations()
+                        ingestor.create_skill_collection_relations()
+                
                 ingestor.close()
                 print(colorize("\n✓ Ingestion completed successfully", Colors.GREEN))
 
@@ -263,11 +291,7 @@ Examples:
                 print(f"Type: {colorize(args.type, Colors.BOLD)}")
                 print(f"Threshold: {colorize(str(args.threshold), Colors.BOLD)}")
                 
-                # Load config first
-                config = load_config(args.config, args.profile)
-                config_path = args.config or 'config/weaviate_config.yaml'
-                
-                search_engine = ESCOSemanticSearch(config_path, args.profile)
+                search_engine = ESCOSemanticSearch(args.config, args.profile)
                 
                 print_section("Searching...")
                 
@@ -317,32 +341,11 @@ Examples:
                     for i, result in enumerate(results, 1):
                         print_result(result, i)
 
-                    if args.related and results:
-                        print_related_nodes(search_engine.get_related_graph(results[0]['uri'], results[0]['type']))
-
                     if args.json:
-                        related_graph = None
-                        if args.related and results:
-                            related_graph = search_engine.get_related_graph(results[0]['uri'], results[0]['type'])
                         print("\n" + format_json_output({
                             "query": args.query,
-                            "results": results,
-                            "related_graph": related_graph
+                            "results": results
                         }))
-
-            elif args.command == 'translate':
-                print_header("ESCO Translation")
-                print(f"Type: {colorize(args.type, Colors.BOLD)}")
-                print(f"Property: {colorize(args.property, Colors.BOLD)}")
-                print(f"Batch Size: {colorize(str(args.batch_size), Colors.BOLD)}")
-                if args.device:
-                    print(f"Device: {colorize(args.device, Colors.BOLD)}")
-                
-                print_section("Starting Translation")
-                translator = ESCOTranslator(args.config, args.profile, args.device)
-                translator.translate_nodes(args.type, args.property, args.batch_size)
-                translator.close()
-                print(colorize("\n✓ Translation completed successfully", Colors.GREEN))
 
     except Exception as e:
         print(colorize(f"\nError: {str(e)}", Colors.RED))
@@ -358,7 +361,10 @@ def cli():
 @click.option('--profile', default='default', help='Configuration profile to use')
 @click.option('--delete-all', is_flag=True, help='Delete all existing data before ingestion')
 @click.option('--embeddings-only', is_flag=True, help='Run only the embedding generation and indexing')
-def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool):
+@click.option('--classes', multiple=True, type=click.Choice(['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']),
+              help='Specific classes to ingest (can be specified multiple times)')
+@click.option('--skip-relations', is_flag=True, help='Skip creating relationships between entities')
+def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, classes: tuple, skip_relations: bool):
     """Ingest ESCO data into Weaviate."""
     try:
         # Create ingestor instance
@@ -368,13 +374,37 @@ def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool):
             click.echo("Deleting all existing data...")
             ingestor.delete_all_data()
         
+        # Determine which classes to ingest
+        classes_to_ingest = list(classes) if classes else ['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']
+        
         # Run appropriate process
         if embeddings_only:
             click.echo("Running embeddings-only mode...")
             ingestor.run_embeddings_only()
         else:
-            click.echo("Running full ingestion...")
-            ingestor.run_ingest()
+            click.echo(f"Running ingestion for classes: {', '.join(classes_to_ingest)}")
+            if skip_relations:
+                click.echo("Skipping relationship creation")
+            
+            # Run ingestion for each selected class
+            for class_name in classes_to_ingest:
+                click.echo(f"\nIngesting {class_name}...")
+                if class_name == 'Occupation':
+                    ingestor.ingest_occupations()
+                elif class_name == 'Skill':
+                    ingestor.ingest_skills()
+                elif class_name == 'ISCOGroup':
+                    ingestor.ingest_isco_groups()
+                elif class_name == 'SkillCollection':
+                    ingestor.ingest_skill_collections()
+            
+            # Create relationships if not skipped
+            if not skip_relations:
+                click.echo("\nCreating relationships...")
+                ingestor.create_skill_relations()
+                ingestor.create_hierarchical_relations()
+                ingestor.create_isco_group_relations()
+                ingestor.create_skill_collection_relations()
         
         click.echo("Ingestion completed successfully!")
         
@@ -390,19 +420,30 @@ def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool):
 @click.option('--certainty', default=0.75, help='Minimum similarity threshold (0-1)')
 @click.option('--config', default='config/weaviate_config.yaml', help='Path to Weaviate configuration file')
 @click.option('--profile', default='default', help='Configuration profile to use')
+@click.option('--type', type=click.Choice(['Skill', 'Occupation', 'ISCOGroup', 'SkillCollection', 'All']),
+              default='Skill', help='Type of nodes to search')
 @click.option('--json', is_flag=True, help='Output results in JSON format')
-def search(query: str, limit: int, certainty: float, config: str, profile: str, json: bool):
+@click.option('--profile-search', is_flag=True, help='Include complete occupation profiles in results')
+def search(query: str, limit: int, certainty: float, config: str, profile: str, type: str, json: bool, profile_search: bool):
     """Search ESCO data using Weaviate."""
     try:
         # Initialize search engine
         engine = ESCOSemanticSearch(config, profile)
         
         # Perform search
-        results = engine.search(
-            query=query,
-            limit=limit,
-            certainty=certainty
-        )
+        if profile_search and type == 'Occupation':
+            results = engine.semantic_search_with_profile(
+                query=query,
+                limit=limit,
+                certainty=certainty
+            )
+        else:
+            results = engine.search(
+                query=query,
+                type=type,
+                limit=limit,
+                certainty=certainty
+            )
         
         # Output results
         if json:
