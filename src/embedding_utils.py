@@ -4,6 +4,20 @@ from tqdm import tqdm
 from typing import List, Dict, Any
 import sys
 
+def generate_embeddings(texts: List[str], model_name: str = 'all-MiniLM-L6-v2') -> List[List[float]]:
+    """
+    Generate embeddings for a list of texts using the specified model.
+    
+    Args:
+        texts: List of text strings to generate embeddings for
+        model_name: Name of the sentence transformer model to use
+        
+    Returns:
+        List of embedding vectors (as lists of floats)
+    """
+    model = SentenceTransformer(model_name)
+    return model.encode(texts, show_progress_bar=False).tolist()
+
 class ESCOEmbedding:
     def __init__(self, model_name='all-MiniLM-L6-v2'):
         """Initialize with a sentence transformer model"""

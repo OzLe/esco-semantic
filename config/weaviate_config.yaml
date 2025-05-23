@@ -1,5 +1,5 @@
 default:
-  url: "http://localhost:8080"
+  url: "http://weaviate:8080"
   vector_index_config:
     distance: "cosine"
     efConstruction: 128
@@ -7,6 +7,9 @@ default:
   batch_size: 100
   retry_attempts: 3
   retry_delay: 5
+  esco:
+    data_dir: "data/esco"
+    batch_size: 100
 
 aura:
   url: "http://weaviate:8080"
@@ -16,4 +19,7 @@ aura:
     maxConnections: 64
   batch_size: 100
   retry_attempts: 5
-  retry_delay: 10 
+  retry_delay: 10
+  esco:
+    data_dir: "data/esco"
+    batch_size: 100 

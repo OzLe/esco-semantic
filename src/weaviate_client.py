@@ -9,15 +9,25 @@ logger = logging.getLogger(__name__)
 
 class WeaviateClient:
     def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default"):
+        """Initialize Weaviate client with configuration."""
+        if not config_path:
+            config_path = "config/weaviate_config.yaml"
         self.config = self._load_config(config_path, profile)
         self.client = self._initialize_client()
         self._ensure_schema()
 
     def _load_config(self, config_path: str, profile: str) -> Dict:
         """Load configuration from YAML file."""
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        return config[profile]
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            if profile not in config:
+                raise ValueError(f"Profile '{profile}' not found in config file")
+            return config[profile]
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        except Exception as e:
+            raise ValueError(f"Failed to load config file: {str(e)}")
 
     def _initialize_client(self) -> weaviate.Client:
         """Initialize Weaviate client with configuration."""

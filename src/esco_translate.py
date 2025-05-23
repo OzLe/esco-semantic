@@ -3,8 +3,6 @@ import argparse
 import logging
 from typing import List, Optional, Dict
 from tqdm import tqdm
-from neo4j import GraphDatabase
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, T5Tokenizer, T5ForConditionalGeneration
 import torch
 from concurrent.futures import ThreadPoolExecutor
 import gc
@@ -17,7 +15,7 @@ import os
 import glob
 import json
 from datetime import datetime
-from neo4j_client import Neo4jClient
+from weaviate_client import WeaviateClient
 from transformers import MarianMTModel, MarianTokenizer
 from logging_config import setup_logging
 
@@ -62,22 +60,13 @@ class ESCOTranslator:
         
         # Load configuration
         if config_path is None:
-            config_path = os.path.join('config', 'neo4j_config.yaml')
+            config_path = os.path.join('config', 'weaviate_config.yaml')
         
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
-        # Get Neo4j configuration for the specified profile
-        neo4j_config = self.config[profile]
-        
-        # Initialize Neo4j driver with configuration
-        self.driver = GraphDatabase.driver(
-            neo4j_config['uri'],
-            auth=(neo4j_config['user'], neo4j_config['password']),
-            max_connection_lifetime=neo4j_config['max_connection_lifetime'],
-            max_connection_pool_size=neo4j_config['max_connection_pool_size'],
-            connection_timeout=neo4j_config['connection_timeout']
-        )
+        # Initialize Weaviate client
+        self.client = WeaviateClient(config_path, profile)
         
         # Determine device
         if device is None:
@@ -238,7 +227,6 @@ class ESCOTranslator:
 
     def close(self):
         """Clean up resources."""
-        self.driver.close()
         # Clear device cache
         if self.device == "cuda":
             torch.cuda.empty_cache()
@@ -338,32 +326,28 @@ class ESCOTranslator:
                 time.sleep(1)  # Wait before retry
 
     def get_nodes_to_translate(self, node_type: str, property_name: str) -> List[dict]:
-        """Get nodes that need translation."""
-        with self.driver.session() as session:
-            result = session.run(
-                f"""
-                MATCH (n:{node_type})
-                WHERE n.{property_name} IS NOT NULL
-                AND n.{property_name + '_he'} IS NULL
-                RETURN n.{property_name} as text, id(n) as node_id
-                """
-            )
-            return [record for record in result]
+        """Get nodes that need translation from Weaviate."""
+        query = {
+            "class": node_type,
+            "fields": [property_name, "id"],
+            "where": {
+                "path": [property_name + "_he"],
+                "operator": "IsNull"
+            }
+        }
+        
+        results = self.client.client.query.get(node_type, [property_name, "id"]).do()
+        return [{"text": node[property_name], "node_id": node["id"]} for node in results]
 
-    def update_node_translation(self, node_id: int, property_name: str, translated_text: str):
-        """Update node with translated text."""
-        with self.driver.session() as session:
-            session.run(
-                f"""
-                MATCH (n)
-                WHERE id(n) = $node_id
-                SET n.{property_name + '_he'} = $translated_text
-                """,
-                node_id=node_id,
-                translated_text=translated_text
-            )
+    def update_node_translation(self, node_id: str, property_name: str, translated_text: str):
+        """Update node with translated text in Weaviate."""
+        self.client.client.data_object.update(
+            class_name=node_type,
+            uuid=node_id,
+            data_object={property_name + "_he": translated_text}
+        )
 
-    def process_batch(self, batch: List[dict], property_name: str) -> Dict[int, str]:
+    def process_batch(self, batch: List[dict], property_name: str) -> Dict[str, str]:
         """Process a batch of nodes in parallel."""
         results = {}
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -422,7 +406,6 @@ def main():
     parser = argparse.ArgumentParser(description="Translate ESCO node properties to Hebrew")
     parser.add_argument("--config", type=str, help="Path to YAML config file")
     parser.add_argument("--profile", type=str, default='default',
-                      choices=['default', 'aura'],
                       help="Configuration profile to use")
     parser.add_argument("--property", required=True, help="Property to translate")
     parser.add_argument("--type", required=True, choices=["Skill", "Occupation", "SkillGroup", "ISCOGroup"],

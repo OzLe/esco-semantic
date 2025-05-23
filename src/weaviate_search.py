@@ -2,7 +2,7 @@ import logging
 from typing import Dict, List, Optional
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from .weaviate_client import WeaviateClient
+from weaviate_client import WeaviateClient
 
 logger = logging.getLogger(__name__)
 

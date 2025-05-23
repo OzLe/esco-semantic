@@ -39,7 +39,6 @@ ENV/
 *.log
 
 # Neo4j data
-data/
 neo4j_data/
 neo4j_logs/
 neo4j_plugins/
