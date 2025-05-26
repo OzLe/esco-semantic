@@ -212,6 +212,47 @@ class WeaviateClient:
             if not self.client.schema.exists("Occupation"):
                 self.client.schema.create_class(occupation_collection)
             
+            # Add SkillGroup collection
+            skill_group_collection = {
+                "class": "SkillGroup",
+                "vectorizer": "none",
+                "vectorIndexConfig": self.config['vector_index_config'],
+                "properties": [
+                    {
+                        "name": "conceptUri",
+                        "dataType": ["string"],
+                        "isIndexed": True,
+                        "tokenization": "word"
+                    },
+                    {
+                        "name": "code",
+                        "dataType": ["text"],
+                        "isIndexed": True,
+                        "tokenization": "word"
+                    },
+                    {
+                        "name": "preferredLabel_en",
+                        "dataType": ["text"],
+                        "isIndexed": True,
+                        "tokenization": "word"
+                    },
+                    {
+                        "name": "altLabels_en",
+                        "dataType": ["text[]"],
+                        "isIndexed": True,
+                        "tokenization": "word"
+                    },
+                    {
+                        "name": "description_en",
+                        "dataType": ["text"],
+                        "isIndexed": True,
+                        "tokenization": "word"
+                    }
+                ]
+            }
+            if not self.client.schema.exists("SkillGroup"):
+                self.client.schema.create_class(skill_group_collection)
+
             # Add reference properties after all classes exist
             self._add_reference_properties()
                 
@@ -340,6 +381,41 @@ class WeaviateClient:
                         "SkillCollection",
                         ref
                     )
+            
+            # Add SkillGroup references
+            skill_group_refs = [
+                {
+                    "name": "hasSkill", # Skills within this group
+                    "dataType": ["Skill"],
+                    "isIndexed": True
+                },
+                {
+                    "name": "broaderSkillGroup",
+                    "dataType": ["SkillGroup"],
+                    "isIndexed": True
+                },
+                {
+                    "name": "narrowerSkillGroup",
+                    "dataType": ["SkillGroup"],
+                    "isIndexed": True
+                }
+            ]
+            for ref in skill_group_refs:
+                if not self._property_exists("SkillGroup", ref["name"]):
+                    self.client.schema.property.create(
+                        "SkillGroup",
+                        ref
+                    )
+            # Update Skill class to include reference to SkillGroup
+            if not self._property_exists("Skill", "memberOfSkillGroup"):
+                self.client.schema.property.create(
+                    "Skill",
+                    {
+                        "name": "memberOfSkillGroup",
+                        "dataType": ["SkillGroup"],
+                        "isIndexed": True
+                    }
+                )
                 
         except Exception as e:
             logger.error(f"Failed to add reference properties: {str(e)}")
@@ -751,6 +827,33 @@ class WeaviateClient:
                 except Exception as e:
                     logger.error(f"Failed to import skill collection {collection['conceptUri']}: {str(e)}")
 
+    def batch_import_skill_groups(self, groups: List[Dict], vectors: List):
+        """Import skill groups in batches."""
+        with self.client.batch as batch:
+            batch.batch_size = self.config['batch_size']
+            for group, vector in zip(groups, vectors):
+                try:
+                    if isinstance(vector, np.ndarray):
+                        vector_list = vector.tolist()
+                    elif isinstance(vector, list):
+                        vector_list = vector
+                    else:
+                        raise ValueError(f"Unexpected vector type: {type(vector)}")
+                    
+                    batch.add_data_object(
+                        data_object={
+                            "conceptUri": group["conceptUri"],
+                            "code": group.get("code", ""),
+                            "preferredLabel_en": group["preferredLabel_en"],
+                            "altLabels_en": group.get("altLabels_en", []),
+                            "description_en": group.get("description_en", "")
+                        },
+                        class_name="SkillGroup",
+                        vector=vector_list
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to import skill group {group['conceptUri']}: {str(e)}")
+
     def add_skill_collection_relation(self, collection_uri: str, skill_uri: str):
         """Add relation between skill collection and skill."""
         try:
@@ -763,4 +866,83 @@ class WeaviateClient:
             )
         except Exception as e:
             logger.error(f"Failed to add skill collection relation: {str(e)}")
-            raise 
+            raise
+
+    def add_skill_to_skill_relation(self, from_skill_uri: str, to_skill_uri: str, relation_type: str):
+        """Add a related skill reference between two skills."""
+        try:
+            # Query for the 'from' skill
+            from_skill_result = (
+                self.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": from_skill_uri
+                })
+                .do()
+            )
+            if not from_skill_result["data"]["Get"]["Skill"]:
+                logger.warning(f"From-skill {from_skill_uri} not found for skill-to-skill relation.")
+                return
+            from_skill_id = from_skill_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+
+            # Query for the 'to' skill
+            to_skill_result = (
+                self.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": to_skill_uri
+                })
+                .do()
+            )
+            if not to_skill_result["data"]["Get"]["Skill"]:
+                logger.warning(f"To-skill {to_skill_uri} not found for skill-to-skill relation.")
+                return
+            to_skill_id = to_skill_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+
+            # Add reference from 'from_skill' to 'to_skill'
+            self.client.data_object.reference.add(
+                from_uuid=from_skill_id,
+                from_class_name="Skill",
+                from_property_name="hasRelatedSkill", # Assumes 'hasRelatedSkill' is the correct property
+                to_uuid=to_skill_id,
+                to_class_name="Skill"
+            )
+             # Add reference from 'to_skill' to 'from_skill' for bidirectionality
+            self.client.data_object.reference.add(
+                from_uuid=to_skill_id,
+                from_class_name="Skill",
+                from_property_name="hasRelatedSkill", 
+                to_uuid=from_skill_id,
+                to_class_name="Skill"
+            )
+            logger.debug(f"Added skill-to-skill relation ({relation_type}) between {from_skill_uri} and {to_skill_uri}")
+
+        except Exception as e:
+            logger.error(f"Failed to add skill-to-skill relation between {from_skill_uri} and {to_skill_uri}: {str(e)}")
+            # Optionally re-raise if this is critical
+            # raise
+
+    def check_object_exists(self, class_name: str, uuid: str) -> bool:
+        """Check if an object exists in Weaviate by its UUID."""
+        try:
+            result = (
+                self.client.query
+                .get(class_name, ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": uuid
+                })
+                .do()
+            )
+            return len(result["data"]["Get"][class_name]) > 0
+        except Exception as e:
+            logger.error(f"Error checking existence of {class_name} {uuid}: {str(e)}")
+            return False 

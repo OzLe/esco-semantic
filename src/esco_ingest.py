@@ -10,6 +10,7 @@ from weaviate_client import WeaviateClient
 from embedding_utils import ESCOEmbedding
 from logging_config import setup_logging
 import numpy as np
+import click
 
 # ESCO v1.2.0 (English) – CSV classification import for Weaviate
 # Oz Levi
@@ -92,6 +93,98 @@ class WeaviateIngestor(BaseIngestor):
     def _get_default_config_path(self):
         return 'config/weaviate_config.yaml'
 
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+    def _standardize_hierarchy_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Rename alternative hierarchy column names to the expected
+        `broaderUri` / `narrowerUri`.
+
+        Handles variants found in ESCO CSVs such as:
+        - broaderConceptUri / narrowerConceptUri
+        - parentUri / childUri
+        - broaderSkillUri / skillUri   (skill hierarchy)
+        - conceptUri / targetUri       (child/narrower)
+        - Level X URI format           (skills hierarchy)
+        """
+        rename_map = {}
+        
+        # Handle Level X URI format
+        if 'Level 0 URI' in df.columns:
+            # For each row, find the highest non-empty Level URI
+            def get_broader_narrower(row):
+                levels = [f'Level {i} URI' for i in range(4)]  # ESCO uses up to Level 3
+                non_empty_levels = [level for level in levels if level in df.columns and pd.notna(row[level]) and row[level] != '']
+                if len(non_empty_levels) >= 2:
+                    # The broader URI is the second-to-last non-empty level
+                    broader = row[non_empty_levels[-2]]
+                    # The narrower URI is the last non-empty level
+                    narrower = row[non_empty_levels[-1]]
+                    return pd.Series([broader, narrower])
+                return pd.Series([None, None])
+            
+            # Apply the function to create broader/narrower columns
+            df[['broaderUri', 'narrowerUri']] = df.apply(get_broader_narrower, axis=1)
+            # Drop rows where we couldn't determine the relationship
+            df = df.dropna(subset=['broaderUri', 'narrowerUri'])
+            # Drop rows where broader and narrower are the same
+            df = df[df['broaderUri'] != df['narrowerUri']]
+            return df
+            
+        # Handle other formats
+        if 'broaderUri' not in df.columns:
+            if 'broaderConceptUri' in df.columns:
+                rename_map['broaderConceptUri'] = 'broaderUri'
+            elif 'parentUri' in df.columns:
+                rename_map['parentUri'] = 'broaderUri'
+            elif 'broaderSkillUri' in df.columns:
+                rename_map['broaderSkillUri'] = 'broaderUri'
+
+        if 'narrowerUri' not in df.columns:
+            if 'narrowerConceptUri' in df.columns:
+                rename_map['narrowerConceptUri'] = 'narrowerUri'
+            elif 'childUri' in df.columns:
+                rename_map['childUri'] = 'narrowerUri'
+            elif 'conceptUri' in df.columns:
+                rename_map['conceptUri'] = 'narrowerUri'
+            elif 'targetUri' in df.columns:
+                rename_map['targetUri'] = 'narrowerUri'
+            elif 'skillUri' in df.columns:
+                rename_map['skillUri'] = 'narrowerUri'
+
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
+
+    def _standardize_collection_relation_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Rename alternative column names for skill‑collection relation CSVs so the rest
+        of the code can safely assume `conceptSchemeUri` and `skillUri`.
+
+        Handles variants such as:
+        - collectionUri / conceptScheme / schemeUri  → conceptSchemeUri
+        - conceptUri / targetUri / skillID           → skillUri
+        """
+        rename_map = {}
+        if 'conceptSchemeUri' not in df.columns:
+            if 'collectionUri' in df.columns:
+                rename_map['collectionUri'] = 'conceptSchemeUri'
+            elif 'conceptScheme' in df.columns:
+                rename_map['conceptScheme'] = 'conceptSchemeUri'
+            elif 'schemeUri' in df.columns:
+                rename_map['schemeUri'] = 'conceptSchemeUri'
+        if 'skillUri' not in df.columns:
+            if 'conceptUri' in df.columns:
+                rename_map['conceptUri'] = 'skillUri'
+            elif 'targetUri' in df.columns:
+                rename_map['targetUri'] = 'skillUri'
+            elif 'skillID' in df.columns:
+                rename_map['skillID'] = 'skillUri'
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
+
     def close(self):
         """Close the Weaviate connection"""
         # Weaviate client doesn't need explicit closing
@@ -116,7 +209,18 @@ class WeaviateIngestor(BaseIngestor):
         logger.info(f"Starting ISCO groups ingestion from {file_path}")
         
         try:
-            df = pd.read_csv(file_path)
+            # Read CSV with explicit string dtypes for critical fields
+            df = pd.read_csv(file_path, dtype={
+                'conceptUri': str,
+                'code': str,
+                'preferredLabel': str,
+                'description': str
+            })
+            
+            # Convert NaN to empty string for string columns
+            string_columns = ['conceptUri', 'code', 'preferredLabel', 'description']
+            df[string_columns] = df[string_columns].fillna('')
+            
             total_groups = len(df)
             logger.info(f"Found {total_groups} ISCO groups to process")
             
@@ -153,7 +257,7 @@ class WeaviateIngestor(BaseIngestor):
                             group_vectors.append(embedding)
                             groups_to_import.append({
                                 "conceptUri": uuid,  # Use just the UUID part
-                                "code": row['code'],
+                                "code": str(row['code']),  # Ensure code is string
                                 "preferredLabel_en": row['preferredLabel'],
                                 "description_en": row.get('description', '')
                             })
@@ -181,10 +285,10 @@ class WeaviateIngestor(BaseIngestor):
             
             # Log final statistics
             logger.info(f"ISCO groups ingestion completed:")
-            logger.info(f"- Total groups processed: {total_groups}")
-            logger.info(f"- Successfully embedded: {len(groups_to_import)}")
-            logger.info(f"- Failed embeddings: {failed_embeddings}")
-            logger.info(f"- Failed imports: {failed_imports}")
+            logger.info(f">> Total groups processed: {total_groups}")
+            logger.info(f">> Successfully embedded: {len(groups_to_import)}")
+            logger.info(f">> Failed embeddings: {failed_embeddings}")
+            logger.info(f">> Failed imports: {failed_imports}")
             
         except Exception as e:
             logger.error(f"Error during ISCO groups ingestion: {str(e)}")
@@ -288,10 +392,10 @@ class WeaviateIngestor(BaseIngestor):
             
             # Log final statistics
             logger.info(f"Occupation ingestion completed:")
-            logger.info(f"- Total occupations processed: {total_occupations}")
-            logger.info(f"- Successfully embedded: {len(occupations_to_import)}")
-            logger.info(f"- Failed embeddings: {failed_embeddings}")
-            logger.info(f"- Failed imports: {failed_imports}")
+            logger.info(f">> Total occupations processed: {total_occupations}")
+            logger.info(f">> Successfully embedded: {len(occupations_to_import)}")
+            logger.info(f">> Failed embeddings: {failed_embeddings}")
+            logger.info(f">> Failed imports: {failed_imports}")
             
         except Exception as e:
             logger.error(f"Error during occupation ingestion: {str(e)}")
@@ -405,10 +509,10 @@ class WeaviateIngestor(BaseIngestor):
             
             # Log final statistics
             logger.info(f"Skills ingestion completed:")
-            logger.info(f"- Total skills processed: {total_skills}")
-            logger.info(f"- Successfully embedded: {len(skills_to_import)}")
-            logger.info(f"- Failed embeddings: {failed_embeddings}")
-            logger.info(f"- Failed imports: {failed_imports}")
+            logger.info(f">> Total skills processed: {total_skills}")
+            logger.info(f">> Successfully embedded: {len(skills_to_import)}")
+            logger.info(f">> Failed embeddings: {failed_embeddings}")
+            logger.info(f">> Failed imports: {failed_imports}")
             
         except Exception as e:
             logger.error(f"Error during skills ingestion: {str(e)}")
@@ -445,73 +549,219 @@ class WeaviateIngestor(BaseIngestor):
         logger.info("Created skill relations in Weaviate")
 
     def create_hierarchical_relations(self):
-        """Create hierarchical relations in Weaviate"""
-        # Create occupation hierarchy
+        """Create occupation and skill hierarchical relations in Weaviate."""
+        # ----------------------------------------------------------- #
+        # Occupation hierarchy
+        # ----------------------------------------------------------- #
         occupation_hierarchy_path = os.path.join(self.esco_dir, 'broaderRelationsOccPillar_en.csv')
         if os.path.exists(occupation_hierarchy_path):
             df = pd.read_csv(occupation_hierarchy_path)
-            total_relations = len(df)
-            logger.info(f"Creating occupation hierarchy relations for {total_relations} relations...")
-            
-            with tqdm(total=total_relations, desc="Creating Occupation Hierarchy", unit="relation") as pbar:
-                for _, row in df.iterrows():
-                    try:
-                        # Extract UUIDs from the full URIs
-                        broader_uuid = row['broaderUri'].split('/')[-1]
-                        narrower_uuid = row['narrowerUri'].split('/')[-1]
-                        
-                        # Add relations
-                        self.client.add_hierarchical_relation(
-                            broader_uri=broader_uuid,
-                            narrower_uri=narrower_uuid,
-                            relation_type="Occupation"
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to add occupation hierarchy relation: {str(e)}")
-                        continue
-                    pbar.update(1)
-        
-        # Create skill hierarchy
+            df = self._standardize_hierarchy_columns(df)
+
+            required_cols = {'broaderUri', 'narrowerUri'}
+            missing_cols = required_cols - set(df.columns)
+            if missing_cols:
+                logger.error(f"Occupation hierarchy file missing columns: {missing_cols}. Skipping occupation hierarchy creation.")
+            else:
+                df[list(required_cols)] = df[list(required_cols)].fillna('')
+                total_relations = len(df)
+                logger.info(f"Creating occupation hierarchy relations for {total_relations} relations...")
+
+                with tqdm(total=total_relations, desc="Creating Occupation Hierarchy", unit="relation") as pbar:
+                    for _, row in df.iterrows():
+                        try:
+                            broader_uuid = row['broaderUri'].split('/')[-1]
+                            narrower_uuid = row['narrowerUri'].split('/')[-1]
+
+                            # Check if both occupations exist before creating relation
+                            broader_exists = self.client.check_object_exists("Occupation", broader_uuid)
+                            narrower_exists = self.client.check_object_exists("Occupation", narrower_uuid)
+                            
+                            if not broader_exists:
+                                logger.warning(f"Broader occupation {broader_uuid} not found - skipping relation")
+                                continue
+                            if not narrower_exists:
+                                logger.warning(f"Narrower occupation {narrower_uuid} not found - skipping relation")
+                                continue
+
+                            self.client.add_hierarchical_relation(
+                                broader_uri=broader_uuid,
+                                narrower_uri=narrower_uuid,
+                                relation_type="Occupation"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to add occupation hierarchy relation: {str(e)}")
+                            continue
+                        pbar.update(1)
+
+        # ----------------------------------------------------------- #
+        # Skill hierarchy
+        # ----------------------------------------------------------- #
         skill_hierarchy_path = os.path.join(self.esco_dir, 'skillsHierarchy_en.csv')
         if os.path.exists(skill_hierarchy_path):
-            # Read CSV with explicit string dtypes for critical fields
-            df = pd.read_csv(skill_hierarchy_path, dtype={
-                'broaderUri': str,
-                'narrowerUri': str
+            df = pd.read_csv(skill_hierarchy_path)
+            df = self._standardize_hierarchy_columns(df)
+
+            required_cols = {'broaderUri', 'narrowerUri'}
+            missing_cols = required_cols - set(df.columns)
+            if missing_cols:
+                logger.error(f"Skill hierarchy file missing columns: {missing_cols}. Skipping skill hierarchy creation.")
+            else:
+                df[list(required_cols)] = df[list(required_cols)].fillna('')
+                df = df[(df['broaderUri'] != '') & (df['narrowerUri'] != '')]
+
+                total_relations = len(df)
+                logger.info(f"Creating skill hierarchy relations for {total_relations} relations...")
+
+                with tqdm(total=total_relations, desc="Creating Skill Hierarchy", unit="relation") as pbar:
+                    for _, row in df.iterrows():
+                        try:
+                            broader_uuid = row['broaderUri'].split('/')[-1]
+                            narrower_uuid = row['narrowerUri'].split('/')[-1]
+
+                            self.client.add_hierarchical_relation(
+                                broader_uri=broader_uuid,
+                                narrower_uri=narrower_uuid,
+                                relation_type="Skill"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to add skill hierarchy relation: {str(e)}")
+                            continue
+                        pbar.update(1)
+
+    def create_isco_group_relations(self):
+        """
+        Link each Occupation to its parent ISCOGroup using the iscoGroup URI column
+        in the occupations CSV. If the Weaviate client exposes
+        `add_occupation_group_relation`, it will be used; otherwise the method
+        exits with a warning so the CLI does not crash.
+        """
+        if not hasattr(self.client, "add_occupation_group_relation"):
+            logger.warning("WeaviateClient has no 'add_occupation_group_relation' method – skipping ISCO‑group relations.")
+            return
+
+        file_path = os.path.join(self.esco_dir, 'occupations_en.csv')
+        if not os.path.exists(file_path):
+            logger.error(f"Occupations file not found at {file_path}; cannot create ISCO‑group relations.")
+            return
+
+        df = pd.read_csv(file_path, dtype={'conceptUri': str, 'iscoGroup': str})
+        df[['conceptUri', 'iscoGroup']] = df[['conceptUri', 'iscoGroup']].fillna('')
+        df = df[(df['conceptUri'] != '') & (df['iscoGroup'] != '')]  # keep only valid rows
+
+        total_links = len(df)
+        logger.info(f"Creating {total_links} Occupation → ISCOGroup relations...")
+
+        with tqdm(total=total_links, desc="Linking ISCO Groups", unit="relation") as pbar:
+            for _, row in df.iterrows():
+                try:
+                    occupation_uuid = row['conceptUri'].split('/')[-1]
+                    group_uuid = row['iscoGroup'].split('/')[-1]
+                    self.client.add_occupation_group_relation(
+                        occupation_uri=occupation_uuid,
+                        group_uri=group_uuid
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to link occupation to ISCO group: {str(e)}")
+                    continue
+                pbar.update(1)
+
+    def ingest_skill_groups(self):
+        """Ingest skill groups into Weaviate"""
+        file_path = os.path.join(self.esco_dir, 'skillGroups_en.csv')
+        logger.info(f"Starting skill groups ingestion from {file_path}")
+        
+        try:
+            required_columns = {"conceptUri", "preferredLabel"}
+            df = pd.read_csv(file_path, dtype={
+                'conceptUri': str,
+                'preferredLabel': str,
+                'altLabels': str,
+                'description': str,
+                'code': str
             })
             
-            # Convert NaN to empty string for string columns
-            string_columns = ['broaderUri', 'narrowerUri']
-            df[string_columns] = df[string_columns].fillna('')
+            logger.debug(f"Skill groups CSV columns detected: {list(df.columns)}")
+            missing = required_columns - set(df.columns)
+            if missing:
+                raise ValueError(f"Skill groups file is missing required columns: {missing}")
+
+            string_columns = ['conceptUri', 'preferredLabel', 'altLabels', 'description', 'code']
+            present_cols = list(set(string_columns).intersection(df.columns))
+            df[present_cols] = df[present_cols].fillna('')
             
-            # Filter out rows with missing URIs
-            df = df[df['broaderUri'].notna() & df['narrowerUri'].notna()]
-            df = df[(df['broaderUri'] != '') & (df['narrowerUri'] != '')]
+            total_groups = len(df)
+            logger.info(f"Found {total_groups} skill groups to process")
             
-            total_relations = len(df)
-            logger.info(f"Creating skill hierarchy relations for {total_relations} relations...")
+            group_vectors = []
+            groups_to_import = []
+            failed_embeddings = 0
             
-            with tqdm(total=total_relations, desc="Creating Skill Hierarchy", unit="relation") as pbar:
-                for _, row in df.iterrows():
-                    try:
-                        # Skip rows with missing URIs
-                        if not row['broaderUri'] or not row['narrowerUri']:
-                            continue
-                            
-                        # Extract UUIDs from the full URIs
-                        broader_uuid = row['broaderUri'].split('/')[-1]
-                        narrower_uuid = row['narrowerUri'].split('/')[-1]
-                        
-                        # Add relations
-                        self.client.add_hierarchical_relation(
-                            broader_uri=broader_uuid,
-                            narrower_uri=narrower_uuid,
-                            relation_type="Skill"
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to add skill hierarchy relation: {str(e)}")
+            logger.info("Generating embeddings for skill groups...")
+            with tqdm(total=total_groups, desc="Embedding Skill Groups", unit="group") as pbar:
+                for idx, row in df.iterrows():
+                    if not row['conceptUri'] or row['conceptUri'].lower() == 'nan':
+                        logger.warning(f"Skipping row {idx} – missing conceptUri")
+                        failed_embeddings += 1
+                        pbar.update(1)
                         continue
+                    try:
+                        node_data = {
+                            'preferredLabel': row['preferredLabel'],
+                            'description': row.get('description', ''),
+                            'altLabels': row.get('altLabels', '')
+                        }
+                        embedding = self.embedding_util.generate_node_embedding(node_data)
+                        
+                        if embedding is not None:
+                            if isinstance(embedding, np.ndarray):
+                                embedding = embedding.tolist()
+                            elif isinstance(embedding, list):
+                                embedding = [float(x) for x in embedding]
+                            else:
+                                raise ValueError(f"Unexpected embedding type: {type(embedding)}")
+                                
+                            uuid = row['conceptUri'].split('/')[-1]
+                            alt_labels = row.get('altLabels', '').split('|') if row.get('altLabels') else []
+                            
+                            group_vectors.append(embedding)
+                            groups_to_import.append({
+                                "conceptUri": uuid,
+                                "code": row.get('code', ''),
+                                "preferredLabel_en": row['preferredLabel'],
+                                "altLabels_en": alt_labels,
+                                "description_en": row.get('description', '')
+                            })
+                        else:
+                            failed_embeddings += 1
+                            logger.warning(f"Could not generate embedding for skill group: {row.get('conceptUri', 'Unknown URI')} - {row.get('preferredLabel', 'Unknown Label')}")
+                    except Exception as e:
+                        failed_embeddings += 1
+                        logger.error(f"Error processing skill group at index {idx}: {str(e)}")
                     pbar.update(1)
+            
+            failed_imports = 0
+            if groups_to_import and group_vectors:
+                logger.info(f"Starting batch import of {len(groups_to_import)} skill groups")
+                try:
+                    self.client.batch_import_skill_groups(groups_to_import, group_vectors)
+                    logger.info(f"Successfully ingested {len(groups_to_import)} skill groups into Weaviate")
+                except Exception as e:
+                    failed_imports = len(groups_to_import)
+                    logger.error(f"Failed to import skill groups batch: {str(e)}")
+                    # raise # Decide if this should halt execution
+            else:
+                logger.warning("No skill groups were imported into Weaviate.")
+            
+            logger.info(f"Skill groups ingestion completed:")
+            logger.info(f">> Total groups processed: {total_groups}")
+            logger.info(f">> Successfully embedded: {len(groups_to_import)}")
+            logger.info(f">> Failed embeddings: {failed_embeddings}")
+            logger.info(f">> Failed imports: {failed_imports}")
+            
+        except Exception as e:
+            logger.error(f"Error during skill groups ingestion: {str(e)}")
+            # raise # Decide if this should halt execution
 
     def ingest_skill_collections(self):
         """Ingest skill collections into Weaviate"""
@@ -520,11 +770,11 @@ class WeaviateIngestor(BaseIngestor):
         
         try:
             # Define required columns
-            required_columns = {"conceptUri", "preferredLabel"}
+            required_columns = {"conceptSchemeUri", "preferredLabel"}
             
             # Read CSV with explicit string dtypes for critical fields
             df = pd.read_csv(file_path, dtype={
-                'conceptUri': str,
+                'conceptSchemeUri': str,
                 'preferredLabel': str,
                 'description': str
             })
@@ -538,7 +788,7 @@ class WeaviateIngestor(BaseIngestor):
                 raise ValueError(f"Skill collections file is missing required columns: {missing}")
             
             # Convert NaN to empty string for string columns
-            string_columns = ['conceptUri', 'preferredLabel', 'description']
+            string_columns = ['conceptSchemeUri', 'preferredLabel', 'description']
             df[string_columns] = df[string_columns].fillna('')
             
             total_collections = len(df)
@@ -554,9 +804,9 @@ class WeaviateIngestor(BaseIngestor):
             with tqdm(total=total_collections, desc="Embedding Skill Collections", unit="collection") as pbar:
                 for idx, row in df.iterrows():
                     try:
-                        # Skip rows with missing conceptUri
-                        if not row['conceptUri'] or row['conceptUri'].lower() == 'nan':
-                            logger.warning(f"Skipping row {idx} - missing conceptUri")
+                        # Skip rows with missing conceptSchemeUri
+                        if not row['conceptSchemeUri'] or row['conceptSchemeUri'].lower() == 'nan':
+                            logger.warning(f"Skipping row {idx} - missing conceptSchemeUri")
                             failed_embeddings += 1
                             continue
                             
@@ -577,8 +827,8 @@ class WeaviateIngestor(BaseIngestor):
                                 raise ValueError(f"Unexpected embedding type: {type(embedding)}")
                                 
                             # Extract UUID from the full URI
-                            concept_uri = row['conceptUri']
-                            uuid = concept_uri.split('/')[-1]
+                            source_uri_value = row['conceptSchemeUri']
+                            uuid = source_uri_value.split('/')[-1]
                             
                             collection_vectors.append(embedding)
                             collections_to_import.append({
@@ -588,7 +838,7 @@ class WeaviateIngestor(BaseIngestor):
                             })
                         else:
                             failed_embeddings += 1
-                            logger.warning(f"Could not generate embedding for skill collection: {row.get('conceptUri', 'Unknown URI')} - {row.get('preferredLabel', 'Unknown Label')}")
+                            logger.warning(f"Could not generate embedding for skill collection: {row.get('conceptSchemeUri', 'Unknown URI')} - {row.get('preferredLabel', 'Unknown Label')}")
                     except Exception as e:
                         failed_embeddings += 1
                         logger.error(f"Error processing skill collection at index {idx}: {str(e)}")
@@ -610,10 +860,10 @@ class WeaviateIngestor(BaseIngestor):
             
             # Log final statistics
             logger.info(f"Skill collections ingestion completed:")
-            logger.info(f"- Total collections processed: {total_collections}")
-            logger.info(f"- Successfully embedded: {len(collections_to_import)}")
-            logger.info(f"- Failed embeddings: {failed_embeddings}")
-            logger.info(f"- Failed imports: {failed_imports}")
+            logger.info(f">> Total collections processed: {total_collections}")
+            logger.info(f">> Successfully embedded: {len(collections_to_import)}")
+            logger.info(f">> Failed embeddings: {failed_embeddings}")
+            logger.info(f">> Failed imports: {failed_imports}")
             
         except Exception as e:
             logger.error(f"Error during skill collections ingestion: {str(e)}")
@@ -630,70 +880,253 @@ class WeaviateIngestor(BaseIngestor):
             'researchSkillsCollection_en.csv',
             'transversalSkillsCollection_en.csv'
         ]
-        
+
         for collection_file in collection_files:
             file_path = os.path.join(self.esco_dir, collection_file)
             if not os.path.exists(file_path):
                 logger.warning(f"Collection file not found: {file_path}")
                 continue
-                
+
             logger.info(f"Processing skill collection relations from {file_path}")
             df = pd.read_csv(file_path)
+
+            # The collection files contain the skills themselves, so we need to:
+            # 1. Get the collection URI from the broaderConceptUri column
+            # 2. Use the conceptUri as the skill URI
+            if 'broaderConceptUri' not in df.columns or 'conceptUri' not in df.columns:
+                logger.error(f"Collection file {collection_file} missing required columns. Skipping.")
+                continue
+
+            # Clean NaNs and drop invalid rows
+            df[['broaderConceptUri', 'conceptUri']] = df[['broaderConceptUri', 'conceptUri']].fillna('')
+            df = df[(df['broaderConceptUri'] != '') & (df['conceptUri'] != '')]
+
             total_relations = len(df)
-            
+            if total_relations == 0:
+                logger.warning(f"No valid relations found in {collection_file} – skipping.")
+                continue
+
             with tqdm(total=total_relations, desc=f"Creating {os.path.basename(collection_file)} Relations", unit="relation") as pbar:
                 for _, row in df.iterrows():
                     try:
                         # Extract UUIDs from the full URIs
-                        collection_uuid = row['conceptSchemeUri'].split('/')[-1]
-                        skill_uuid = row['skillUri'].split('/')[-1]
-                        
-                        # Add relation
-                        self.client.add_skill_collection_relation(
-                            collection_uri=collection_uuid,
-                            skill_uri=skill_uuid
-                        )
+                        collection_uris = row['broaderConceptUri'].split(' | ')
+                        skill_uuid = row['conceptUri'].split('/')[-1]
+
+                        # Check if skill exists
+                        skill_exists = self.client.check_object_exists("Skill", skill_uuid)
+                        if not skill_exists:
+                            logger.warning(f"Skill {skill_uuid} not found - skipping relation")
+                            continue
+
+                        # Add relation for each collection URI
+                        for collection_uri in collection_uris:
+                            collection_uuid = collection_uri.split('/')[-1]
+                            
+                            # Check if collection exists
+                            collection_exists = self.client.check_object_exists("SkillCollection", collection_uuid)
+                            if not collection_exists:
+                                logger.warning(f"Skill collection {collection_uuid} not found - skipping relation")
+                                continue
+
+                            # Add relation
+                            self.client.add_skill_collection_relation(
+                                collection_uri=collection_uuid,
+                                skill_uri=skill_uuid
+                            )
                     except Exception as e:
                         logger.error(f"Failed to add skill collection relation: {str(e)}")
                         continue
                     pbar.update(1)
 
-    def run_ingest(self):
+    def create_skill_skill_relations(self):
+        """Create skill-to-skill relations in Weaviate from skillSkillRelations_en.csv."""
+        file_path = os.path.join(self.esco_dir, 'skillSkillRelations_en.csv')
+        if not os.path.exists(file_path):
+            logger.warning(f"Skill-skill relations file not found: {file_path}, skipping this step.")
+            return
+
+        logger.info(f"Processing skill-to-skill relations from {file_path}")
+        df = pd.read_csv(file_path, dtype=str) # Ensure all URI columns are read as strings
+        df = df.fillna('') # Fill NaN with empty strings to avoid errors
+
+        required_cols = {'originalSkillUri', 'relatedSkillUri', 'relationType'}
+        missing_cols = required_cols - set(df.columns)
+        if missing_cols:
+            logger.error(f"Skill-skill relations file {file_path} is missing columns: {missing_cols}. Skipping.")
+            return
+
+        # Filter out rows with missing essential URIs
+        df = df[(df['originalSkillUri'] != '') & (df['relatedSkillUri'] != '')]
+        if df.empty:
+            logger.info(f"No valid skill-skill relations found in {file_path}.")
+            return
+            
+        total_relations = len(df)
+        logger.info(f"Creating {total_relations} skill-to-skill relations...")
+
+        with tqdm(total=total_relations, desc="Creating Skill-Skill Relations", unit="relation") as pbar:
+            for _, row in df.iterrows():
+                try:
+                    from_skill_uuid = row['originalSkillUri'].split('/')[-1]
+                    to_skill_uuid = row['relatedSkillUri'].split('/')[-1]
+                    relation_type = row['relationType']
+
+                    # Check existence before creating relation
+                    from_skill_exists = self.client.check_object_exists("Skill", from_skill_uuid)
+                    to_skill_exists = self.client.check_object_exists("Skill", to_skill_uuid)
+
+                    if not from_skill_exists:
+                        logger.warning(f"Original skill {from_skill_uuid} not found. Skipping relation to {to_skill_uuid}.")
+                        pbar.update(1)
+                        continue
+                    if not to_skill_exists:
+                        logger.warning(f"Related skill {to_skill_uuid} not found. Skipping relation from {from_skill_uuid}.")
+                        pbar.update(1)
+                        continue
+                    
+                    self.client.add_skill_to_skill_relation(
+                        from_skill_uri=from_skill_uuid,
+                        to_skill_uri=to_skill_uuid,
+                        relation_type=relation_type
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to add skill-to-skill relation ({row.get('originalSkillUri')} -> {row.get('relatedSkillUri')}): {str(e)}")
+                pbar.update(1)
+        logger.info(f"Finished creating skill-to-skill relations.")
+
+    def create_broader_skill_relations(self):
+        """Create broader skill relations in Weaviate"""
+        file_path = os.path.join(self.esco_dir, 'broaderRelationsSkillPillar_en-small.csv')
+        if not os.path.exists(file_path):
+            logger.warning(f"Broader relations file not found: {file_path}")
+            return
+
+        logger.info("Processing broader skill relations")
+        df = pd.read_csv(file_path)
+
+        # Clean NaNs and drop invalid rows
+        df[['conceptUri', 'broaderUri']] = df[['conceptUri', 'broaderUri']].fillna('')
+        df = df[(df['conceptUri'] != '') & (df['broaderUri'] != '')]
+
+        total_relations = len(df)
+        if total_relations == 0:
+            logger.warning("No valid relations found in broader relations file – skipping.")
+            return
+
+        with tqdm(total=total_relations, desc="Creating Broader Skill Relations", unit="relation") as pbar:
+            for _, row in df.iterrows():
+                try:
+                    # Extract UUIDs from the full URIs
+                    skill_uuid = row['conceptUri'].split('/')[-1]
+                    broader_uuid = row['broaderUri'].split('/')[-1]
+
+                    # Check if both skills exist before creating relation
+                    skill_exists = self.client.check_object_exists("Skill", skill_uuid)
+                    broader_exists = self.client.check_object_exists("Skill", broader_uuid)
+
+                    if not skill_exists:
+                        logger.warning(f"Skill {skill_uuid} not found - skipping relation")
+                        continue
+                    if not broader_exists:
+                        logger.warning(f"Broader skill {broader_uuid} not found - skipping relation")
+                        continue
+
+                    # Add relation
+                    self.client.add_broader_skill_relation(
+                        skill_uri=skill_uuid,
+                        broader_uri=broader_uuid
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to add broader skill relation: {str(e)}")
+                    continue
+                pbar.update(1)
+
+    def check_class_exists(self, class_name: str) -> bool:
+        """Check if a class exists in Weaviate and has data"""
+        try:
+            if not self.client.client.schema.exists(class_name):
+                return False
+            
+            # Check if class has any objects
+            result = self.client.client.query.aggregate(class_name).with_meta_count().do()
+            count = result.get('data', {}).get('Aggregate', {}).get(class_name, [{}])[0].get('meta', {}).get('count', 0)
+            return count > 0
+        except Exception as e:
+            logger.error(f"Error checking existence of {class_name}: {str(e)}")
+            return False
+
+    def run_ingest(self, force_reingest: bool = False):
         """Run the complete Weaviate ingestion process"""
         try:
             # Create a progress bar for the overall process
-            with tqdm(total=6, desc="ESCO Ingestion Progress", unit="step",
+            with tqdm(total=11, desc="ESCO Ingestion Progress", unit="step",
                      bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
-                # Step 1: Delete existing data
-                self.delete_all_data()
+                
+                # Check for existing data and handle re-ingestion
+                if not force_reingest:
+                    existing_classes = []
+                    for class_name in ["ISCOGroup", "Occupation", "Skill", "SkillCollection", "SkillGroup"]:
+                        if self.check_class_exists(class_name):
+                            existing_classes.append(class_name)
+                    
+                    if existing_classes:
+                        logger.warning(f"Found existing data for classes: {', '.join(existing_classes)}")
+                        if not click.confirm("Do you want to re-ingest these classes?", default=False):
+                            logger.info("Skipping re-ingestion of existing classes")
+                            # Skip the ingestion steps for existing classes
+                            for class_name in existing_classes:
+                                if class_name in ["ISCOGroup", "Occupation", "Skill", "SkillCollection", "SkillGroup"]:
+                                     pbar.update(1) # only update for main entity types
+                
+                # Step 1: Delete existing data if force_reingest is True
+                if force_reingest:
+                    self.delete_all_data()
                 pbar.update(1)
                 
-                # Step 2: Ingest ISCO groups
-                self.ingest_isco_groups()
+                # Step 2: Ingest ISCO groups if not exists or force_reingest
+                if force_reingest or not self.check_class_exists("ISCOGroup"):
+                    self.ingest_isco_groups()
                 pbar.update(1)
                 
-                # Step 3: Ingest occupations
-                self.ingest_occupations()
+                # Step 3: Ingest occupations if not exists or force_reingest
+                if force_reingest or not self.check_class_exists("Occupation"):
+                    self.ingest_occupations()
                 pbar.update(1)
                 
-                # Step 4: Ingest skills
-                self.ingest_skills()
+                # Step 4: Ingest skills if not exists or force_reingest
+                if force_reingest or not self.check_class_exists("Skill"):
+                    self.ingest_skills()
                 pbar.update(1)
                 
-                # Step 5: Ingest skill collections
-                self.ingest_skill_collections()
+                # Step 5: Ingest skill collections if not exists or force_reingest
+                if force_reingest or not self.check_class_exists("SkillCollection"):
+                    self.ingest_skill_collections()
+                pbar.update(1)
+
+                # Step 6: Ingest skill groups if not exists or force_reingest
+                if force_reingest or not self.check_class_exists("SkillGroup"):
+                    self.ingest_skill_groups()
                 pbar.update(1)
                 
-                # Step 6: Create skill relations
-                self.create_skill_relations()
+                # Step 7: Create occupation skill relations
+                self.create_skill_relations() # This links Occupations to Skills
                 pbar.update(1)
                 
-                # Step 7: Create hierarchical relations
+                # Step 8: Create hierarchical relations (Occupations and Skills)
                 self.create_hierarchical_relations()
                 pbar.update(1)
+
+                # Step 9: Create ISCO group relations (Occupation to ISCOGroup)
+                self.create_isco_group_relations()
+                pbar.update(1)
                 
-                # Step 8: Create skill collection relations
+                # Step 10: Create skill collection relations (SkillCollection to Skill)
                 self.create_skill_collection_relations()
+                pbar.update(1)
+
+                # Step 11: Create skill-to-skill relations
+                self.create_skill_skill_relations()
                 pbar.update(1)
                 
             logger.info("ESCO data ingestion into Weaviate completed successfully")
@@ -751,4 +1184,4 @@ def main():
         ingestor.close()
 
 if __name__ == "__main__":
-    main() 
+    main()

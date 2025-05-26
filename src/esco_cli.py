@@ -364,7 +364,8 @@ def cli():
 @click.option('--classes', multiple=True, type=click.Choice(['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']),
               help='Specific classes to ingest (can be specified multiple times)')
 @click.option('--skip-relations', is_flag=True, help='Skip creating relationships between entities')
-def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, classes: tuple, skip_relations: bool):
+@click.option('--force-reingest', is_flag=True, help='Force re-ingestion of all classes regardless of existing data')
+def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, classes: tuple, skip_relations: bool, force_reingest: bool):
     """Ingest ESCO data into Weaviate."""
     try:
         # Create ingestor instance
