@@ -11,24 +11,25 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
     python3-dev \
-    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements/base.txt requirements/prod.txt ./
+RUN pip install --no-cache-dir -r prod.txt
 
 # Copy application code
-COPY . .
+COPY src/ ./src/
+COPY config/ ./config/
 
 # Create necessary directories
-RUN mkdir -p /app/data/esco
+RUN mkdir -p /app/data/esco /app/logs
 
 # Set environment variables
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
+ENV ESCO_ENV=production
 
 # Command to run the application
-CMD ["python", "src/esco_cli.py"]
+ENTRYPOINT ["python", "-m", "cli.main"]
 
 # The rest of the configuration will be handled by docker-compose 

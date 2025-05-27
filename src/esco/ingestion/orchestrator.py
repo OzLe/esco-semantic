@@ -4,6 +4,8 @@ from pathlib import Path
 import pandas as pd
 from .processors.occupation import OccupationProcessor
 from .processors.skill import SkillProcessor
+from .processors.isco_group import ISCOGroupIngestor
+from .processors.skill_collection import SkillCollectionIngestor
 from ..core.config import Config
 from ..core.exceptions import IngestionError
 from ..database.weaviate.client import WeaviateClient
@@ -21,6 +23,8 @@ class IngestionOrchestrator:
         # Initialize processors
         self.occupation_processor = OccupationProcessor(config, self.client)
         self.skill_processor = SkillProcessor(config, self.client)
+        self.isco_group_ingestor = ISCOGroupIngestor(self.client, self.config.get('embeddings.generator'), self.config.get('ingestion.batch_size', 100))
+        self.skill_collection_ingestor = SkillCollectionIngestor(self.client, self.config.get('embeddings.generator'), self.config.get('ingestion.batch_size', 100))
     
     def run_ingest(self, force_reingest: bool = False) -> None:
         """Run the complete ingestion process"""
@@ -58,67 +62,42 @@ class IngestionOrchestrator:
         file_path = self.data_dir / 'isco_groups.csv'
         if not file_path.exists():
             raise IngestionError(f"ISCO groups file not found: {file_path}")
-        
-        self.occupation_processor.process_csv_in_batches(
-            str(file_path),
-            self.occupation_processor.process
-        )
+        self.isco_group_ingestor.ingest_file(str(file_path))
     
     def _process_occupations(self) -> None:
         """Process occupations"""
         file_path = self.data_dir / 'occupations.csv'
         if not file_path.exists():
             raise IngestionError(f"Occupations file not found: {file_path}")
-        
-        self.occupation_processor.process_csv_in_batches(
-            str(file_path),
-            self.occupation_processor.process
-        )
+        self.occupation_processor.process_csv_in_batches(str(file_path), self.occupation_processor.process)
     
     def _process_skills(self) -> None:
         """Process skills"""
         file_path = self.data_dir / 'skills.csv'
         if not file_path.exists():
             raise IngestionError(f"Skills file not found: {file_path}")
-        
-        self.skill_processor.process_csv_in_batches(
-            str(file_path),
-            self.skill_processor.process
-        )
+        self.skill_processor.process_csv_in_batches(str(file_path), self.skill_processor.process)
     
     def _process_skill_groups(self) -> None:
         """Process skill groups"""
         file_path = self.data_dir / 'skill_groups.csv'
         if not file_path.exists():
             raise IngestionError(f"Skill groups file not found: {file_path}")
-        
-        self.skill_processor.process_csv_in_batches(
-            str(file_path),
-            self.skill_processor.process
-        )
+        self.skill_processor.process_csv_in_batches(str(file_path), self.skill_processor.process)
     
     def _process_skill_collections(self) -> None:
         """Process skill collections"""
         file_path = self.data_dir / 'skill_collections.csv'
         if not file_path.exists():
             raise IngestionError(f"Skill collections file not found: {file_path}")
-        
-        self.skill_processor.process_csv_in_batches(
-            str(file_path),
-            self.skill_processor.process
-        )
+        self.skill_collection_ingestor.ingest_file(str(file_path))
     
     def _create_skill_relations(self) -> None:
         """Create skill relations for occupations"""
         file_path = self.data_dir / 'occupation_skill_relations.csv'
         if not file_path.exists():
             raise IngestionError(f"Occupation-skill relations file not found: {file_path}")
-        
-        # Process relations in batches
-        self.occupation_processor.process_csv_in_batches(
-            str(file_path),
-            lambda df: self._process_skill_relations_batch(df)
-        )
+        self.occupation_processor.process_csv_in_batches(str(file_path), lambda df: self._process_skill_relations_batch(df))
     
     def _process_skill_relations_batch(self, df: pd.DataFrame) -> None:
         """Process a batch of skill relations"""
@@ -134,12 +113,7 @@ class IngestionOrchestrator:
         file_path = self.data_dir / 'hierarchical_relations.csv'
         if not file_path.exists():
             raise IngestionError(f"Hierarchical relations file not found: {file_path}")
-        
-        # Process relations in batches
-        self.skill_processor.process_csv_in_batches(
-            str(file_path),
-            lambda df: self._process_hierarchical_relations_batch(df)
-        )
+        self.skill_processor.process_csv_in_batches(str(file_path), lambda df: self._process_hierarchical_relations_batch(df))
     
     def _process_hierarchical_relations_batch(self, df: pd.DataFrame) -> None:
         """Process a batch of hierarchical relations"""
@@ -155,12 +129,7 @@ class IngestionOrchestrator:
         file_path = self.data_dir / 'isco_group_relations.csv'
         if not file_path.exists():
             raise IngestionError(f"ISCO group relations file not found: {file_path}")
-        
-        # Process relations in batches
-        self.occupation_processor.process_csv_in_batches(
-            str(file_path),
-            lambda df: self._process_isco_group_relations_batch(df)
-        )
+        self.occupation_processor.process_csv_in_batches(str(file_path), lambda df: self._process_isco_group_relations_batch(df))
     
     def _process_isco_group_relations_batch(self, df: pd.DataFrame) -> None:
         """Process a batch of ISCO group relations"""
@@ -175,12 +144,7 @@ class IngestionOrchestrator:
         file_path = self.data_dir / 'skill_collection_relations.csv'
         if not file_path.exists():
             raise IngestionError(f"Skill collection relations file not found: {file_path}")
-        
-        # Process relations in batches
-        self.skill_processor.process_csv_in_batches(
-            str(file_path),
-            lambda df: self._process_skill_collection_relations_batch(df)
-        )
+        self.skill_processor.process_csv_in_batches(str(file_path), lambda df: self._process_skill_collection_relations_batch(df))
     
     def _process_skill_collection_relations_batch(self, df: pd.DataFrame) -> None:
         """Process a batch of skill collection relations"""
@@ -195,12 +159,7 @@ class IngestionOrchestrator:
         file_path = self.data_dir / 'skill_skill_relations.csv'
         if not file_path.exists():
             raise IngestionError(f"Skill-skill relations file not found: {file_path}")
-        
-        # Process relations in batches
-        self.skill_processor.process_csv_in_batches(
-            str(file_path),
-            lambda df: self._process_skill_skill_relations_batch(df)
-        )
+        self.skill_processor.process_csv_in_batches(str(file_path), lambda df: self._process_skill_skill_relations_batch(df))
     
     def _process_skill_skill_relations_batch(self, df: pd.DataFrame) -> None:
         """Process a batch of skill-to-skill relations"""
@@ -208,5 +167,5 @@ class IngestionOrchestrator:
             self.skill_processor.add_related_skill_relation(
                 from_skill_uri=row['fromSkillUri'],
                 to_skill_uri=row['toSkillUri'],
-                relation_type=row['relationType']
+                relation_type=row.get('relationType', 'relatedTo')
             ) 
