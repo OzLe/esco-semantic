@@ -1,0 +1,66 @@
+ISCOGroup:
+  - name: hasOccupation
+    dataType: [Occupation]
+    isIndexed: true
+  - name: broaderISCOGroup
+    dataType: [ISCOGroup]
+    isIndexed: true
+  - name: narrowerISCOGroup
+    dataType: [ISCOGroup]
+    isIndexed: true
+
+Occupation:
+  - name: memberOfISCOGroup
+    dataType: [ISCOGroup]
+    isIndexed: true
+  - name: hasEssentialSkill
+    dataType: [Skill]
+    isIndexed: true
+  - name: hasOptionalSkill
+    dataType: [Skill]
+    isIndexed: true
+  - name: broaderOccupation
+    dataType: [Occupation]
+    isIndexed: true
+  - name: narrowerOccupation
+    dataType: [Occupation]
+    isIndexed: true
+
+Skill:
+  - name: isEssentialForOccupation
+    dataType: [Occupation]
+    isIndexed: true
+  - name: isOptionalForOccupation
+    dataType: [Occupation]
+    isIndexed: true
+  - name: broaderSkill
+    dataType: [Skill]
+    isIndexed: true
+  - name: narrowerSkill
+    dataType: [Skill]
+    isIndexed: true
+  - name: hasRelatedSkill
+    dataType: [Skill]
+    isIndexed: true
+  - name: memberOfSkillCollection
+    dataType: [SkillCollection]
+    isIndexed: true
+  - name: memberOfSkillGroup
+    dataType: [SkillGroup]
+    isIndexed: true
+
+SkillCollection:
+  - name: hasSkill
+    dataType: [Skill]
+    isIndexed: true
+
+SkillGroup:
+  - name: hasSkill
+    dataType: [Skill]
+    isIndexed: true
+  - name: broaderSkillGroup
+    dataType: [SkillGroup]
+    isIndexed: true
+  - name: narrowerSkillGroup
+    dataType: [SkillGroup]
+    isIndexed: true 

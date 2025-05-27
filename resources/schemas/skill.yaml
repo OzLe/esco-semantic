@@ -1,0 +1,37 @@
+class: Skill
+vectorizer: none
+vectorIndexConfig: ${vector_index_config}
+properties:
+  - name: conceptUri
+    dataType: [string]
+    isIndexed: true
+    tokenization: word
+  - name: code
+    dataType: [text]
+    isIndexed: true
+    tokenization: word
+  - name: preferredLabel_en
+    dataType: [text]
+    isIndexed: true
+    tokenization: word
+  - name: altLabels_en
+    dataType:
+      - text[]
+    isIndexed: true
+    tokenization: word
+  - name: description_en
+    dataType: [text]
+    isIndexed: true
+    tokenization: word
+  - name: definition_en
+    dataType: [text]
+    isIndexed: true
+    tokenization: word
+  - name: skillType
+    dataType: [text]
+    isIndexed: true
+    tokenization: word
+  - name: reuseLevel
+    dataType: [text]
+    isIndexed: true
+    tokenization: word 

@@ -4,6 +4,7 @@ import logging
 from typing import Dict, List, Optional, Any
 import numpy as np
 from pathlib import Path
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -37,221 +38,41 @@ class WeaviateClient:
             timeout_config=(5, 60)  # (connect timeout, read timeout)
         )
 
+    def _load_schema_file(self, schema_name: str) -> Dict:
+        """Load a schema file from the resources directory."""
+        schema_path = Path("resources/schemas") / f"{schema_name}.yaml"
+        try:
+            with open(schema_path, 'r') as f:
+                schema = yaml.safe_load(f)
+            # Replace vector_index_config placeholder with actual config
+            if isinstance(schema.get('vectorIndexConfig'), str) and schema['vectorIndexConfig'] == '${vector_index_config}':
+                schema['vectorIndexConfig'] = self.config['vector_index_config']
+            return schema
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Schema file not found: {schema_path}")
+        except Exception as e:
+            raise ValueError(f"Failed to load schema file {schema_name}: {str(e)}")
+
+    def _load_references(self) -> Dict:
+        """Load reference properties from the references file."""
+        return self._load_schema_file("references")
+
     def _ensure_schema(self):
         """Ensure the required schema exists in Weaviate."""
-        # Define base ISCOGroup collection without references
-        isco_group_collection = {
-            "class": "ISCOGroup",
-            "vectorizer": "none",
-            "vectorIndexConfig": self.config['vector_index_config'],
-            "properties": [
-                {
-                    "name": "conceptUri",
-                    "dataType": ["string"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "code",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "preferredLabel_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "description_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                }
-            ]
-        }
-
-        # Define base Occupation collection without references
-        occupation_collection = {
-            "class": "Occupation",
-            "vectorizer": "none",
-            "vectorIndexConfig": self.config['vector_index_config'],
-            "properties": [
-                {
-                    "name": "conceptUri",
-                    "dataType": ["string"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "code",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "preferredLabel_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "altLabels_en",
-                    "dataType": ["text[]"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "description_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "definition_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                }
-            ]
-        }
-
-        # Define base Skill collection without references
-        skill_collection = {
-            "class": "Skill",
-            "vectorizer": "none",
-            "vectorIndexConfig": self.config['vector_index_config'],
-            "properties": [
-                {
-                    "name": "conceptUri",
-                    "dataType": ["string"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "code",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "preferredLabel_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "altLabels_en",
-                    "dataType": ["text[]"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "description_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "definition_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "skillType",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "reuseLevel",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                }
-            ]
-        }
-
-        # Define base SkillCollection collection without references
-        skill_collection_class = {
-            "class": "SkillCollection",
-            "vectorizer": "none",
-            "vectorIndexConfig": self.config['vector_index_config'],
-            "properties": [
-                {
-                    "name": "conceptUri",
-                    "dataType": ["string"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "preferredLabel_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                },
-                {
-                    "name": "description_en",
-                    "dataType": ["text"],
-                    "isIndexed": True,
-                    "tokenization": "word"
-                }
-            ]
-        }
-
-        # Create base collections first
         try:
-            if not self.client.schema.exists("ISCOGroup"):
-                self.client.schema.create_class(isco_group_collection)
-            if not self.client.schema.exists("Skill"):
-                self.client.schema.create_class(skill_collection)
-            if not self.client.schema.exists("SkillCollection"):
-                self.client.schema.create_class(skill_collection_class)
-            if not self.client.schema.exists("Occupation"):
-                self.client.schema.create_class(occupation_collection)
-            
-            # Add SkillGroup collection
-            skill_group_collection = {
-                "class": "SkillGroup",
-                "vectorizer": "none",
-                "vectorIndexConfig": self.config['vector_index_config'],
-                "properties": [
-                    {
-                        "name": "conceptUri",
-                        "dataType": ["string"],
-                        "isIndexed": True,
-                        "tokenization": "word"
-                    },
-                    {
-                        "name": "code",
-                        "dataType": ["text"],
-                        "isIndexed": True,
-                        "tokenization": "word"
-                    },
-                    {
-                        "name": "preferredLabel_en",
-                        "dataType": ["text"],
-                        "isIndexed": True,
-                        "tokenization": "word"
-                    },
-                    {
-                        "name": "altLabels_en",
-                        "dataType": ["text[]"],
-                        "isIndexed": True,
-                        "tokenization": "word"
-                    },
-                    {
-                        "name": "description_en",
-                        "dataType": ["text"],
-                        "isIndexed": True,
-                        "tokenization": "word"
-                    }
-                ]
+            # Load and create base schemas
+            schemas = {
+                "ISCOGroup": self._load_schema_file("isco_group"),
+                "Skill": self._load_schema_file("skill"),
+                "SkillCollection": self._load_schema_file("skill_collection"),
+                "Occupation": self._load_schema_file("occupation"),
+                "SkillGroup": self._load_schema_file("skill_group")
             }
-            if not self.client.schema.exists("SkillGroup"):
-                self.client.schema.create_class(skill_group_collection)
+
+            # Create base collections first
+            for class_name, schema in schemas.items():
+                if not self.client.schema.exists(class_name):
+                    self.client.schema.create_class(schema)
 
             # Add reference properties after all classes exist
             self._add_reference_properties()
@@ -263,160 +84,15 @@ class WeaviateClient:
     def _add_reference_properties(self):
         """Add reference properties after all classes are created."""
         try:
-            # Add ISCOGroup references
-            isco_group_refs = [
-                {
-                    "name": "hasOccupation",
-                    "dataType": ["Occupation"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "broaderISCOGroup",
-                    "dataType": ["ISCOGroup"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "narrowerISCOGroup",
-                    "dataType": ["ISCOGroup"],
-                    "isIndexed": True
-                }
-            ]
+            references = self._load_references()
             
-            for ref in isco_group_refs:
-                if not self._property_exists("ISCOGroup", ref["name"]):
-                    self.client.schema.property.create(
-                        "ISCOGroup",
-                        ref
-                    )
-
-            # Add Occupation references
-            occupation_refs = [
-                {
-                    "name": "memberOfISCOGroup",
-                    "dataType": ["ISCOGroup"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "hasEssentialSkill",
-                    "dataType": ["Skill"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "hasOptionalSkill",
-                    "dataType": ["Skill"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "broaderOccupation",
-                    "dataType": ["Occupation"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "narrowerOccupation",
-                    "dataType": ["Occupation"],
-                    "isIndexed": True
-                }
-            ]
-            
-            for ref in occupation_refs:
-                if not self._property_exists("Occupation", ref["name"]):
-                    self.client.schema.property.create(
-                        "Occupation",
-                        ref
-                    )
-
-            # Add Skill references
-            skill_refs = [
-                {
-                    "name": "isEssentialForOccupation",
-                    "dataType": ["Occupation"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "isOptionalForOccupation",
-                    "dataType": ["Occupation"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "broaderSkill",
-                    "dataType": ["Skill"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "narrowerSkill",
-                    "dataType": ["Skill"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "hasRelatedSkill",
-                    "dataType": ["Skill"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "memberOfSkillCollection",
-                    "dataType": ["SkillCollection"],
-                    "isIndexed": True
-                }
-            ]
-            
-            for ref in skill_refs:
-                if not self._property_exists("Skill", ref["name"]):
-                    self.client.schema.property.create(
-                        "Skill",
-                        ref
-                    )
-
-            # Add SkillCollection references
-            skill_collection_refs = [
-                {
-                    "name": "hasSkill",
-                    "dataType": ["Skill"],
-                    "isIndexed": True
-                }
-            ]
-            
-            for ref in skill_collection_refs:
-                if not self._property_exists("SkillCollection", ref["name"]):
-                    self.client.schema.property.create(
-                        "SkillCollection",
-                        ref
-                    )
-            
-            # Add SkillGroup references
-            skill_group_refs = [
-                {
-                    "name": "hasSkill", # Skills within this group
-                    "dataType": ["Skill"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "broaderSkillGroup",
-                    "dataType": ["SkillGroup"],
-                    "isIndexed": True
-                },
-                {
-                    "name": "narrowerSkillGroup",
-                    "dataType": ["SkillGroup"],
-                    "isIndexed": True
-                }
-            ]
-            for ref in skill_group_refs:
-                if not self._property_exists("SkillGroup", ref["name"]):
-                    self.client.schema.property.create(
-                        "SkillGroup",
-                        ref
-                    )
-            # Update Skill class to include reference to SkillGroup
-            if not self._property_exists("Skill", "memberOfSkillGroup"):
-                self.client.schema.property.create(
-                    "Skill",
-                    {
-                        "name": "memberOfSkillGroup",
-                        "dataType": ["SkillGroup"],
-                        "isIndexed": True
-                    }
-                )
-                
+            for class_name, refs in references.items():
+                for ref in refs:
+                    if not self._property_exists(class_name, ref["name"]):
+                        self.client.schema.property.create(
+                            class_name,
+                            ref
+                        )
         except Exception as e:
             logger.error(f"Failed to add reference properties: {str(e)}")
             raise
