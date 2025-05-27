@@ -1,39 +1,38 @@
 # ESCO Data Management and Search Tool
 
-This tool is designed for managing, searching, and translating the ESCO (European Skills, Competences, Qualifications and Occupations) taxonomy using both Neo4j graph database and Weaviate vector database. It provides a unified command-line interface for data ingestion, semantic search, and translation capabilities.
+This tool is designed for managing, searching, and translating the ESCO (European Skills, Competences, Qualifications and Occupations) taxonomy using Weaviate vector database. It provides a unified command-line interface for data ingestion, semantic search, and translation capabilities.
 
 ## Features
 
-- **Dual Database Architecture**
-  - Neo4j for graph-based relationships and complex queries
+- **Vector Database Architecture**
   - Weaviate for high-performance vector search
-  - Automatic synchronization between both databases
+  - HNSW indexing for fast similarity search
+  - Rich cross-references between entities
+  - Configurable vector index parameters
 
 - **Semantic Search**
   - Vector-based semantic search using HNSW index
-  - Support for both occupations and skills
+  - Support for multiple entity types (Skills, Occupations, ISCO Groups)
   - Configurable similarity thresholds
-  - Rich result formatting with related skills
+  - Rich result formatting with related entities
+  - Profile-based search with complete occupation details
 
 - **Data Management**
   - Batch ingestion with automatic retries
   - Cross-references between entities
   - Support for multiple languages
   - Efficient vector indexing
+  - Selective class ingestion
+  - Optional relationship creation
 
 - **Translation**
   - Neural machine translation support
   - Batch processing capabilities
   - Multiple language pair support
 
-## Disclaimer
-
-This tool is provided "AS IS", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages or other liability, whether in an action of contract, tort or otherwise, arising from, out of or in connection with the software or the use or other dealings in the software.
-
 ## Prerequisites
 
 - Python 3.8 or higher
-- Neo4j Database (version 5.x) or Neo4j AuraDB
 - Weaviate Vector Database (version 1.25)
 - ESCO CSV files (v1.2.0 or compatible)
 - Docker and Docker Compose (for containerized deployment)
@@ -51,68 +50,60 @@ cd ESCO-Ingest
 docker-compose up -d
 ```
 
-3. Ingest data:
+3. Download the translation model:
 ```bash
-# Ingest into Neo4j
-python src/esco_cli.py ingest --config config/neo4j_config.yaml
-
-# Ingest into Weaviate
-python src/esco_cli.py ingest-weaviate --config config/weaviate_config.yaml
+python src/esco_cli.py download-model
 ```
 
-4. Search the data:
+4. Ingest data:
 ```bash
-# Search using Neo4j
+# Ingest all data
+python src/esco_cli.py ingest --config config/weaviate_config.yaml
+
+# Ingest specific classes
+python src/esco_cli.py ingest --config config/weaviate_config.yaml --classes Skill Occupation
+
+# Ingest with options
+python src/esco_cli.py ingest --config config/weaviate_config.yaml --delete-all --skip-relations
+```
+
+5. Search the data:
+```bash
+# Basic search
 python src/esco_cli.py search --query "python programming"
 
-# Search using Weaviate
-python src/esco_cli.py search-weaviate --query "python programming"
+# Advanced search
+python src/esco_cli.py search --query "python programming" --type Skill --limit 5 --certainty 0.7 --profile-search
+
+# JSON output
+python src/esco_cli.py search --query "python programming" --json
 ```
 
 ## Architecture
 
 ### Database Integration
 
-The tool uses a dual-database architecture:
+The tool uses Weaviate as its primary database:
 
-1. **Neo4j**
-   - Stores graph relationships
-   - Handles complex queries
-   - Manages entity properties
-   - Supports Cypher queries
-
-2. **Weaviate**
+1. **Weaviate**
    - Stores vector embeddings
    - Provides semantic search
    - Manages cross-references
    - Uses HNSW indexing
+   - Supports multiple languages
+   - Handles complex relationships
 
 ### Data Flow
 
 ```mermaid
 graph TD
     A[ESCO CSV Files] --> B[Ingestion]
-    B --> C[Neo4j (Graph)]
-    C --> D[Weaviate (Vector)]
-    D --> E[Search API]
+    B --> C[Weaviate (Vector)]
+    C --> D[Search API]
+    E[Translation Model] --> F[Translation API]
 ```
 
 ## Configuration
-
-### Neo4j Configuration
-
-Create `config/neo4j_config.yaml`:
-```yaml
-default:
-  uri: "bolt://localhost:7687"
-  user: "neo4j"
-  password: "your-password"
-  max_retries: 3
-  retry_delay: 5
-  max_connection_lifetime: 3600
-  max_connection_pool_size: 50
-  connection_timeout: 30
-```
 
 ### Weaviate Configuration
 
@@ -134,33 +125,35 @@ default:
 ### Data Ingestion
 
 ```bash
-# Ingest into Neo4j
-python src/esco_cli.py ingest --config config/neo4j_config.yaml
+# Ingest all data
+python src/esco_cli.py ingest --config config/weaviate_config.yaml
 
-# Ingest into Weaviate
-python src/esco_cli.py ingest-weaviate --config config/weaviate_config.yaml
+# Ingest specific classes
+python src/esco_cli.py ingest --config config/weaviate_config.yaml --classes Skill Occupation
 
 # Delete and re-ingest
-python src/esco_cli.py ingest-weaviate --config config/weaviate_config.yaml --delete-all
+python src/esco_cli.py ingest --config config/weaviate_config.yaml --delete-all
+
+# Skip relationship creation
+python src/esco_cli.py ingest --config config/weaviate_config.yaml --skip-relations
 ```
 
 ### Semantic Search
 
 ```bash
-# Search using Neo4j
-python src/esco_cli.py search --query "python programming" --type Skill
-
-# Search using Weaviate
-python src/esco_cli.py search-weaviate --query "python programming" --limit 5
+# Basic search
+python src/esco_cli.py search --query "python programming"
 
 # Search with options
-python src/esco_cli.py search-weaviate \
+python src/esco_cli.py search \
     --query "python programming" \
+    --type Skill \
     --limit 5 \
-    --certainty 0.7
+    --certainty 0.7 \
+    --profile-search
 
 # JSON output
-python src/esco_cli.py search-weaviate --query "python programming" --json
+python src/esco_cli.py search --query "python programming" --json
 ```
 
 ### Translation
@@ -179,29 +172,18 @@ python src/esco_cli.py translate \
 
 ## Data Models
 
-### Neo4j Graph Model
-
-Nodes:
-- `Skill`: Individual skills
-- `SkillGroup`: Groups of skills
-- `Occupation`: Occupations
-- `ISCOGroup`: ISCO classification groups
-
-Relationships:
-- `BROADER_THAN`: Hierarchical relationships
-- `PART_OF_ISCOGROUP`: Occupation-ISCO links
-- `ESSENTIAL_FOR`: Essential skill links
-- `OPTIONAL_FOR`: Optional skill links
-- `RELATED_SKILL`: Related skill links
-
 ### Weaviate Vector Model
 
 Collections:
 1. **Occupation**
    - Properties:
      - `conceptUri` (string)
-     - `preferredLabel` (text)
-     - `description` (text)
+     - `code` (string)
+     - `preferredLabel_en` (text)
+     - `description_en` (text)
+     - `definition_en` (text)
+     - `iscoGroup` (string)
+     - `altLabels_en` (text[])
    - Vector: 384-dimensional embedding
    - Cross-references:
      - `hasEssentialSkill` → Skill
@@ -210,16 +192,43 @@ Collections:
 2. **Skill**
    - Properties:
      - `conceptUri` (string)
-     - `preferredLabel` (text)
-     - `description` (text)
+     - `code` (string)
+     - `preferredLabel_en` (text)
+     - `description_en` (text)
+     - `definition_en` (text)
+     - `skillType` (string)
+     - `reuseLevel` (string)
+     - `altLabels_en` (text[])
+   - Vector: 384-dimensional embedding
+
+3. **ISCOGroup**
+   - Properties:
+     - `conceptUri` (string)
+     - `code` (string)
+     - `preferredLabel_en` (text)
+     - `description_en` (text)
+   - Vector: 384-dimensional embedding
+
+4. **SkillCollection**
+   - Properties:
+     - `conceptUri` (string)
+     - `preferredLabel_en` (text)
+     - `description_en` (text)
+   - Vector: 384-dimensional embedding
+
+5. **SkillGroup**
+   - Properties:
+     - `conceptUri` (string)
+     - `preferredLabel_en` (text)
+     - `description_en` (text)
    - Vector: 384-dimensional embedding
 
 ## Performance
 
 ### Batch Processing
-- Neo4j: 50,000 rows per batch
-- Weaviate: 100 rows per batch
+- Configurable batch sizes (default: 100)
 - Automatic retries for failed operations
+- Efficient vector storage and indexing
 
 ### Search Performance
 - HNSW index for fast vector search
@@ -234,7 +243,6 @@ Collections:
 ## Monitoring
 
 ### Health Checks
-- Neo4j: HTTP endpoint (7474)
 - Weaviate: Ready endpoint (8080)
 - Automatic container restart
 
@@ -248,19 +256,21 @@ Collections:
 ### Common Issues
 
 1. **Connection Problems**
-   - Verify database URLs
-   - Check credentials
+   - Verify Weaviate URL
+   - Check service health
    - Ensure ports are accessible
 
 2. **Ingestion Failures**
    - Check CSV file formats
    - Verify file permissions
    - Monitor memory usage
+   - Check batch size settings
 
 3. **Search Issues**
    - Verify embeddings generation
    - Check index status
    - Monitor search latency
+   - Adjust certainty threshold
 
 ### Debugging
 
@@ -276,10 +286,6 @@ docker-compose logs -f
 
 3. Monitor database status:
 ```bash
-# Neo4j
-curl http://localhost:7474
-
-# Weaviate
 curl http://localhost:8080/v1/.well-known/ready
 ```
 
@@ -289,34 +295,27 @@ curl http://localhost:8080/v1/.well-known/ready
 ```
 ESCO-Ingest/
 ├── config/
-│   ├── neo4j_config.yaml
 │   └── weaviate_config.yaml
 ├── src/
 │   ├── esco_cli.py
 │   ├── weaviate_client.py
 │   ├── weaviate_search.py
-│   └── ...
-├── ESCO/
-│   └── *.csv
+│   ├── weaviate_semantic_search.py
+│   ├── embedding_utils.py
+│   ├── esco_translate.py
+│   ├── esco_ingest.py
+│   ├── download_model.py
+│   └── logging_config.py
+├── resources/
+│   └── schemas/
+│       ├── occupation.yaml
+│       ├── skill.yaml
+│       ├── isco_group.yaml
+│       ├── skill_collection.yaml
+│       ├── skill_group.yaml
+│       └── references.yaml
 └── docker-compose.yml
 ```
-
-### Adding Features
-
-1. **New Search Engine**
-   - Implement search interface
-   - Add configuration options
-   - Update CLI commands
-
-2. **Data Processing**
-   - Add new data sources
-   - Implement transformers
-   - Update ingestion pipeline
-
-3. **API Integration**
-   - Add new endpoints
-   - Implement authentication
-   - Add rate limiting
 
 ## Contributing
 
@@ -332,6 +331,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Acknowledgments
 
 - ESCO for the taxonomy data
-- Neo4j for the graph database
 - Weaviate for the vector database
 - All contributors and users 
