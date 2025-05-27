@@ -1,0 +1,32 @@
+# Development Environment Configuration
+
+# Override logging for development
+logging:
+  level: DEBUG
+  directory: logs/dev
+
+# Development database settings
+weaviate:
+  url: http://localhost:8080
+  connect_timeout: 10
+  read_timeout: 120
+
+# Development embedding settings
+embeddings:
+  cache_dir: .cache/dev/embeddings
+  batch_size: 16  # Smaller batch size for development
+
+# Development translation settings
+translation:
+  cache_dir: .cache/dev/translations
+  batch_size: 16
+
+# Development search settings
+search:
+  min_score: 0.3  # More lenient scoring for development
+
+# Development ingestion settings
+ingestion:
+  batch_size: 50  # Smaller batches for development
+  validation:
+    strict: true  # Stricter validation in development 

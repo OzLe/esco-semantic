@@ -1,0 +1,46 @@
+# ESCO Tool Default Configuration
+
+# Logging configuration
+logging:
+  level: INFO
+  directory: logs
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Database configuration
+weaviate:
+  url: http://localhost:8080
+  connect_timeout: 5
+  read_timeout: 60
+  batch_size: 100
+
+# Embedding configuration
+embeddings:
+  model: all-MiniLM-L6-v2
+  cache_dir: .cache/embeddings
+  batch_size: 32
+  max_length: 512
+
+# Translation configuration
+translation:
+  model: Helsinki-NLP/opus-mt-en-de
+  batch_size: 32
+  max_length: 512
+  cache_dir: .cache/translations
+
+# Search configuration
+search:
+  default_limit: 10
+  min_score: 0.5
+  max_results: 100
+
+# Ingestion configuration
+ingestion:
+  batch_size: 100
+  max_retries: 3
+  retry_delay: 5
+  validation:
+    strict: false
+    required_fields:
+      - conceptUri
+      - preferredLabel 
