@@ -1,52 +1,48 @@
 import logging
 import os
-from logging.handlers import RotatingFileHandler
+from pathlib import Path
+import atexit
 
-def setup_logging(level=logging.INFO):
-    """Setup logging configuration for all modules
+def setup_logging():
+    """Setup logging configuration for the application"""
+    # Get log level from environment or default to INFO
+    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+    log_dir = os.getenv('LOG_DIR', 'logs')
     
-    Args:
-        level (int): Logging level (default: logging.INFO)
-    """
     # Create logs directory if it doesn't exist
-    os.makedirs('logs', exist_ok=True)
-    
-    # Configure logging format
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    formatter = logging.Formatter(log_format)
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
     
     # Create handlers
+    file_handler = logging.FileHandler(os.path.join(log_dir, 'esco.log'))
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
     
-    file_handler = RotatingFileHandler(
-        'logs/esco.log',
-        maxBytes=10*1024*1024,  # 10MB
-        backupCount=5,
-        encoding='utf-8'
-    )
+    # Configure handlers
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
     
     # Configure root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(level)
+    root_logger.setLevel(getattr(logging, log_level))
     
     # Remove any existing handlers
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     
     # Add handlers
-    root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
     
-    # Set specific logger levels
-    logging.getLogger('urllib3').setLevel(logging.WARNING)  # Reduce urllib3 logging
-    logging.getLogger('tqdm').setLevel(logging.WARNING)  # Reduce tqdm logging
-    logging.getLogger('sentence_transformers').setLevel(logging.WARNING)  # Reduce sentence-transformers logging
-    logging.getLogger('transformers').setLevel(logging.WARNING)  # Reduce transformers logging
+    # Register cleanup function
+    def cleanup():
+        for handler in root_logger.handlers[:]:
+            handler.close()
+            root_logger.removeHandler(handler)
     
-    # Disable tqdm progress bars for specific modules
-    import tqdm
-    tqdm.tqdm.monitor_interval = 0  # Disable tqdm monitoring
+    atexit.register(cleanup)
     
-    return logging.getLogger(__name__) 
+    # Create and return module logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(getattr(logging, log_level))
+    
+    return logger 

@@ -1,17 +1,42 @@
 import logging
-from embedding_utils import ESCOEmbedding
-from logging_config import setup_logging
-from weaviate_client import WeaviateClient
 from typing import List, Dict, Optional, Any, Tuple
+from sentence_transformers import SentenceTransformer
+from src.logging_config import setup_logging
+from src.weaviate_client import WeaviateClient
+import torch
+import os
 
 # Setup logging
 logger = setup_logging()
 
+def get_device():
+    """Get the best available device for PyTorch operations."""
+    if torch.backends.mps.is_available():
+        return "mps"
+    elif torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
 class ESCOSemanticSearch:
-    def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default", embedding_util=None):
-        """Initialize with Weaviate client and optional embedding utility"""
+    def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default", 
+                 embedding_model: str = 'sentence-transformers/multi-qa-MiniLM-L6-cos-v1'):
+        """Initialize with Weaviate client and embedding model
+        
+        Args:
+            config_path: Path to Weaviate configuration file
+            profile: Configuration profile to use
+            embedding_model: Name of the sentence transformer model to use
+        """
         self.client = WeaviateClient(config_path, profile)
-        self.embedding_util = embedding_util or ESCOEmbedding()
+        
+        # Get device from environment or auto-detect
+        device = os.getenv('TORCH_DEVICE', get_device())
+        if device == "mps" and not torch.backends.mps.is_available():
+            logger.warning("MPS requested but not available, falling back to CPU")
+            device = "cpu"
+        
+        logger.info(f"Using device: {device}")
+        self.model = SentenceTransformer(embedding_model, device=device)
     
     def is_data_indexed(self, node_type="Skill") -> bool:
         """Check if the data is already indexed with embeddings"""
@@ -62,7 +87,7 @@ class ESCOSemanticSearch:
             if validation_details["skills_indexed"] and validation_details["occupations_indexed"]:
                 # Sample check for relationships
                 sample_skill = self.client.client.query.get("Skill", ["conceptUri"]).with_limit(1).do()
-                if sample_skill["data"]["Get"]["Skill"]:
+                if sample_skill and "data" in sample_skill and "Get" in sample_skill["data"] and "Skill" in sample_skill["data"]["Get"] and sample_skill["data"]["Get"]["Skill"]:
                     skill_uri = sample_skill["data"]["Get"]["Skill"][0]["conceptUri"]
                     related_occupations = self.client.client.query.get(
                         "Occupation", ["conceptUri"]
@@ -71,7 +96,15 @@ class ESCOSemanticSearch:
                         "operator": "ContainsAny",
                         "valueString": [skill_uri]
                     }).do()
-                    validation_details["has_relationships"] = len(related_occupations["data"]["Get"]["Occupation"]) > 0
+                    
+                    if related_occupations and "data" in related_occupations and "Get" in related_occupations["data"] and "Occupation" in related_occupations["data"]["Get"]:
+                        validation_details["has_relationships"] = len(related_occupations["data"]["Get"]["Occupation"]) > 0
+                    else:
+                        validation_details["has_relationships"] = False
+                        validation_details["errors"].append("Could not validate relationships between skills and occupations")
+                else:
+                    validation_details["has_relationships"] = False
+                    validation_details["errors"].append("Could not find a sample skill to validate relationships")
             
             is_valid = validation_details["skills_indexed"] and validation_details["occupations_indexed"]
             
@@ -105,8 +138,8 @@ class ESCOSemanticSearch:
                 logger.error(f"{error_msg} Validation details: {validation_details}")
                 raise ValueError(error_msg)
         
-        # Generate query embedding
-        query_embedding = self.embedding_util.generate_text_embedding(query_text)
+        # Generate query embedding using the sentence transformer model
+        query_embedding = self.model.encode(query_text)
         if not query_embedding:
             logger.error("Failed to generate embedding for query text")
             return []
@@ -193,7 +226,7 @@ class ESCOSemanticSearch:
         except Exception as e:
             logger.error(f"Error during semantic search: {str(e)}")
             return []
-    
+
     def get_related_graph(self, uri: str, node_type: str = "Skill") -> Optional[Dict]:
         """Get related graph for a node"""
         try:
@@ -243,7 +276,7 @@ class ESCOSemanticSearch:
                     self.client.client.query
                     .get("Skill", ["conceptUri", "preferredLabel", "description"])
                     .with_near_vector({
-                        "vector": self.embedding_util.generate_text_embedding(skill["preferredLabel"]),
+                        "vector": self.model.encode(skill["preferredLabel"]),
                         "certainty": 0.7
                     })
                     .with_limit(10)
@@ -333,7 +366,7 @@ class ESCOSemanticSearch:
                     self.client.client.query
                     .get("Occupation", ["conceptUri", "preferredLabel", "description"])
                     .with_near_vector({
-                        "vector": self.embedding_util.generate_text_embedding(occupation["preferredLabel"]),
+                        "vector": self.model.encode(occupation["preferredLabel"]),
                         "certainty": 0.7
                     })
                     .with_limit(10)
@@ -421,4 +454,64 @@ class ESCOSemanticSearch:
                 }
                 complete_results.append(complete_result)
         
-        return complete_results 
+        return complete_results
+
+    def format_results(self, results: List[Dict]) -> str:
+        """Format search results as a human-readable string.
+        
+        Args:
+            results: List of search results from search() method
+            
+        Returns:
+            Formatted string representation of results
+        """
+        if not results:
+            return "No results found."
+        
+        output = []
+        output.append("=" * 72)
+        output.append(" ESCO Semantic Search Results ")
+        output.append("=" * 72)
+        output.append("")
+        
+        for i, result in enumerate(results, 1):
+            if isinstance(result, dict) and "search_result" in result:
+                # Handle complete profile results
+                occupation = result["search_result"]
+                profile = result["profile"]
+                
+                # Format occupation
+                output.append(f"{i}. [Occupation] {occupation['label']}")
+                output.append(f"   URI: {occupation['uri']}")
+                output.append(f"   Similarity: {occupation['score']:.2%}")
+                if occupation.get("description"):
+                    output.append(f"   Description: {occupation['description']}")
+                
+                # Format essential skills
+                if profile["related"]["essential_skills"]:
+                    output.append("\n   Essential Skills:")
+                    for skill in profile["related"]["essential_skills"]:
+                        output.append(f"   • {skill['label']}")
+                
+                # Format optional skills
+                if profile["related"]["optional_skills"]:
+                    output.append("\n   Optional Skills:")
+                    for skill in profile["related"]["optional_skills"]:
+                        output.append(f"   • {skill['label']}")
+                
+                # Format related occupations
+                if profile["related"]["related_occupations"]:
+                    output.append("\n   Related Occupations:")
+                    for occ in profile["related"]["related_occupations"]:
+                        output.append(f"   • {occ['label']}")
+            else:
+                # Handle basic search results
+                output.append(f"{i}. [{result.get('type', 'Result')}] {result['label']}")
+                output.append(f"   URI: {result['uri']}")
+                output.append(f"   Similarity: {result['score']:.2%}")
+                if result.get("description"):
+                    output.append(f"   Description: {result['description']}")
+            
+            output.append("\n" + "-" * 72)
+        
+        return "\n".join(output) 

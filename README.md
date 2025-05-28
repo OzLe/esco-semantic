@@ -9,6 +9,7 @@ This tool is designed for managing, searching, and translating the ESCO (Europea
   - HNSW indexing for fast similarity search
   - Rich cross-references between entities
   - Configurable vector index parameters
+  - Support for multiple vectorizers (Sentence Transformers, Contextuary)
 
 - **Semantic Search**
   - Vector-based semantic search using HNSW index
@@ -50,12 +51,21 @@ cd ESCO-Ingest
 docker-compose up -d
 ```
 
-3. Download the translation model:
+3. Switch vectorizer (optional):
+```bash
+# Use sentence transformers (default)
+./switch_vectorizer.sh sentence-transformers
+
+# Use contextuary
+./switch_vectorizer.sh contextuary
+```
+
+4. Download the translation model:
 ```bash
 python src/esco_cli.py download-model
 ```
 
-4. Ingest data:
+5. Ingest data:
 ```bash
 # Ingest all data
 python src/esco_cli.py ingest --config config/weaviate_config.yaml
@@ -67,7 +77,7 @@ python src/esco_cli.py ingest --config config/weaviate_config.yaml --classes Ski
 python src/esco_cli.py ingest --config config/weaviate_config.yaml --delete-all --skip-relations
 ```
 
-5. Search the data:
+6. Search the data:
 ```bash
 # Basic search
 python src/esco_cli.py search --query "python programming"
@@ -92,6 +102,35 @@ The tool uses Weaviate as its primary database:
    - Uses HNSW indexing
    - Supports multiple languages
    - Handles complex relationships
+   - Supports multiple vectorizers:
+     - Sentence Transformers (all-MiniLM-L6-v2)
+     - Contextuary
+
+### Vectorizer Configuration
+
+The system supports two vectorizers:
+
+1. **Sentence Transformers**
+   - Model: all-MiniLM-L6-v2
+   - 384-dimensional embeddings
+   - Optimized for semantic similarity
+   - Default configuration
+
+2. **Contextuary**
+   - Specialized for contextual understanding
+   - Alternative embedding model
+   - Can be switched using the provided script
+
+To switch between vectorizers:
+```bash
+# Switch to sentence transformers
+./switch_vectorizer.sh sentence-transformers
+
+# Switch to contextuary
+./switch_vectorizer.sh contextuary
+```
+
+Note: Switching vectorizers requires re-ingesting the data as the embeddings will be different.
 
 ### Data Flow
 

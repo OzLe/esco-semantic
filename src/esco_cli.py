@@ -5,19 +5,19 @@ import os
 import yaml
 import json
 from datetime import datetime
-from weaviate_semantic_search import ESCOSemanticSearch
-from embedding_utils import ESCOEmbedding
-from esco_ingest import create_ingestor
-from esco_translate import ESCOTranslator
-from download_model import download_model
-from logging_config import setup_logging
 import click
 from pathlib import Path
 from typing import Optional
-from weaviate_search import WeaviateSearchEngine
-from weaviate_client import WeaviateClient
-from embedding_utils import generate_embeddings
 import pandas as pd
+
+# Local imports
+from src.weaviate_semantic_search import ESCOSemanticSearch
+from src.embedding_utils import ESCOEmbedding, generate_embeddings
+from src.esco_ingest import create_ingestor
+from src.esco_translate import ESCOTranslator
+from src.download_model import download_model
+from src.logging_config import setup_logging
+from src.weaviate_client import WeaviateClient
 
 # Setup logging
 logger = setup_logging()

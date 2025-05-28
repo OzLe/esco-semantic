@@ -15,9 +15,9 @@ import os
 import glob
 import json
 from datetime import datetime
-from weaviate_client import WeaviateClient
-from transformers import MarianMTModel, MarianTokenizer
-from logging_config import setup_logging
+from src.weaviate_client import WeaviateClient
+from transformers import MarianMTModel, MarianTokenizer, AutoTokenizer, AutoModelForSeq2SeqLM
+from src.logging_config import setup_logging
 
 # Setup logging
 logger = setup_logging()
@@ -45,12 +45,12 @@ def verify_dependencies():
             f"pip install {' '.join(missing_packages)}"
         )
 
-def get_device() -> str:
-    """Determine the best available device for the current system."""
-    if torch.cuda.is_available():
+def get_device():
+    """Get the best available device for PyTorch operations."""
+    if torch.backends.mps.is_available():
+        return "mps"
+    elif torch.cuda.is_available():
         return "cuda"
-    elif torch.backends.mps.is_available() and platform.processor() == "arm":
-        return "mps"  # M1/M2 Mac
     return "cpu"
 
 class ESCOTranslator:

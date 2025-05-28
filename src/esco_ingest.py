@@ -6,11 +6,13 @@ import argparse
 import yaml
 from datetime import datetime
 from abc import ABC, abstractmethod
-from weaviate_client import WeaviateClient
-from embedding_utils import ESCOEmbedding
-from logging_config import setup_logging
 import numpy as np
 import click
+
+# Local imports
+from src.weaviate_client import WeaviateClient
+from src.embedding_utils import ESCOEmbedding
+from src.logging_config import setup_logging
 
 # ESCO v1.2.0 (English) – CSV classification import for Weaviate
 # Oz Levi

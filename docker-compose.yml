@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   weaviate:
     image: semitechnologies/weaviate:1.25.4
@@ -13,6 +11,7 @@ services:
       - ENABLE_MODULES=text2vec-transformers
       - TRANSFORMERS_INFERENCE_API=http://t2v-transformers:8080
       - CLUSTER_HOSTNAME=node1
+      - VECTORIZER_TYPE=sentence-transformers
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
@@ -25,28 +24,83 @@ services:
       - esco_network
 
   t2v-transformers:
-    image: semitechnologies/transformers-inference:sentence-transformers-multi-qa-MiniLM-L6-cos-v1
+    image: ${TRANSFORMER_IMAGE:-semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2}
+    container_name: esco_transformers
     environment:
       - ENABLE_CUDA=0
-    networks:
-      - esco_network
-
-  esco-app:
-    build: .
-    container_name: esco_application
-    depends_on:
-      weaviate:
-        condition: service_healthy
-    environment:
-      - WEAVIATE_URL=http://weaviate:8080
+      - HF_HOME=/app/cache
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    command: >
-      sh -c "python src/esco_cli.py ingest --config config/weaviate_config.yaml --profile aura && tail -f /dev/null"
+      - transformers_cache:/app/cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/.well-known/ready')"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 120s
     restart: unless-stopped
     networks:
       - esco_network
+
+  esco-ingest:
+    build: .
+    container_name: esco_ingestion
+    depends_on:
+      weaviate:
+        condition: service_healthy
+      t2v-transformers:
+        condition: service_healthy
+    environment:
+      - WEAVIATE_URL=http://weaviate:8080
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - LOG_DIR=/app/logs
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./src:/app/src
+      - ./config:/app/config
+    command: >
+      sh -c "python -m src.esco_cli ingest --config config/weaviate_config.yaml --profile aura && tail -f /dev/null"
+    restart: unless-stopped
+    networks:
+      - esco_network
+
+  esco-search:
+    build: .
+    container_name: esco_search
+    depends_on:
+      weaviate:
+        condition: service_healthy
+      t2v-transformers:
+        condition: service_healthy
+    environment:
+      - WEAVIATE_URL=http://weaviate:8080
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - LOG_DIR=/app/logs
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./src:/app/src
+      - ./config:/app/config
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "python -m src.search_service && tail -f /dev/null"
+    restart: unless-stopped
+    networks:
+      - esco_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   esco_network:
@@ -54,3 +108,4 @@ networks:
 
 volumes:
   weaviate_data:
+  transformers_cache:
