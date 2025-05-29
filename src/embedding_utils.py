@@ -2,7 +2,6 @@ from sentence_transformers import SentenceTransformer
 import logging
 from tqdm import tqdm
 from typing import List, Dict, Any
-import sys
 
 def generate_embeddings(texts: List[str], model_name: str = 'all-MiniLM-L6-v2') -> List[List[float]]:
     """

@@ -1,10 +1,8 @@
 import os
 import pandas as pd
 from tqdm import tqdm
-import logging
 import argparse
 import yaml
-from datetime import datetime
 from abc import ABC, abstractmethod
 import numpy as np
 import click
@@ -102,6 +100,19 @@ class WeaviateIngestor(BaseIngestor):
 
     def _get_default_config_path(self):
         return 'config/weaviate_config.yaml'
+
+    def initialize_schema(self):
+        """Initialize the Weaviate schema if not already initialized."""
+        try:
+            if not self.client.is_schema_initialized():
+                logger.info("Initializing Weaviate schema...")
+                self.client.ensure_schema()
+                logger.info("Schema initialization completed")
+            else:
+                logger.info("Schema already initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize schema: {str(e)}")
+            raise
 
     # ------------------------------------------------------------------ #
     # Internal helpers
@@ -914,29 +925,40 @@ class WeaviateIngestor(BaseIngestor):
 
             logger.info(f"Processing skill collection relations from {file_path}")
             df = pd.read_csv(file_path)
-
-            # The collection files contain the skills themselves, so we need to:
-            # 1. Get the collection URI from the broaderConceptUri column
-            # 2. Use the conceptUri as the skill URI
-            if 'broaderConceptUri' not in df.columns or 'conceptUri' not in df.columns:
-                logger.error(f"Collection file {collection_file} missing required columns. Skipping.")
+            
+            # **FIX 1: Standardize column names**
+            df = self._standardize_collection_relation_columns(df)
+            
+            # **FIX 2: Use standardized column names**
+            if 'conceptSchemeUri' not in df.columns or 'skillUri' not in df.columns:
+                logger.error(f"Collection file {collection_file} missing required columns after standardization. "
+                            f"Available columns: {list(df.columns)}. Skipping.")
                 continue
 
             # Clean NaNs and drop invalid rows
-            df[['broaderConceptUri', 'conceptUri']] = df[['broaderConceptUri', 'conceptUri']].fillna('')
-            df = df[(df['broaderConceptUri'] != '') & (df['conceptUri'] != '')]
+            df[['conceptSchemeUri', 'skillUri']] = df[['conceptSchemeUri', 'skillUri']].fillna('')
+            df = df[(df['conceptSchemeUri'] != '') & (df['skillUri'] != '')]
 
             total_relations = len(df)
             if total_relations == 0:
                 logger.warning(f"No valid relations found in {collection_file} – skipping.")
                 continue
 
+            logger.info(f"Found {total_relations} relations in {collection_file}")
+
             with tqdm(total=total_relations, desc=f"Creating {os.path.basename(collection_file)} Relations", unit="relation") as pbar:
                 for _, row in df.iterrows():
                     try:
-                        # Extract UUIDs from the full URIs
-                        collection_uris = row['broaderConceptUri'].split(' | ')
-                        skill_uuid = row['conceptUri'].split('/')[-1]
+                        # **FIX 3: Handle collection URIs properly**
+                        # Some files might have multiple collection URIs separated by ' | '
+                        collection_uris_raw = str(row['conceptSchemeUri'])
+                        if ' | ' in collection_uris_raw:
+                            collection_uris = collection_uris_raw.split(' | ')
+                        else:
+                            collection_uris = [collection_uris_raw]
+                        
+                        skill_uri_raw = str(row['skillUri'])
+                        skill_uuid = skill_uri_raw.split('/')[-1]
 
                         # Check if skill exists
                         skill_exists = self.skill_repo.check_object_exists(skill_uuid)
@@ -945,24 +967,39 @@ class WeaviateIngestor(BaseIngestor):
                             continue
 
                         # Add relation for each collection URI
+                        relations_added = 0
                         for collection_uri in collection_uris:
+                            collection_uri = collection_uri.strip()  # Remove any whitespace
+                            if not collection_uri:
+                                continue
+                                
                             collection_uuid = collection_uri.split('/')[-1]
                             
                             # Check if collection exists
                             collection_exists = self.skill_collection_repo.check_object_exists(collection_uuid)
                             if not collection_exists:
-                                logger.warning(f"Skill collection {collection_uuid} not found - skipping relation")
+                                logger.debug(f"Skill collection {collection_uuid} (from URI: {collection_uri}) not found - skipping relation")
                                 continue
 
                             # Add relation
-                            self.skill_collection_repo.add_skill_collection_relation(
+                            success = self.skill_collection_repo.add_skill_collection_relation(
                                 collection_uri=collection_uuid,
                                 skill_uri=skill_uuid
                             )
+                            if success:
+                                relations_added += 1
+                            else:
+                                logger.warning(f"Failed to add relation between collection {collection_uuid} and skill {skill_uuid}")
+                        
+                        if relations_added == 0:
+                            logger.warning(f"No relations added for skill {skill_uuid} - none of the collection URIs were found: {collection_uris}")
+                    
                     except Exception as e:
-                        logger.error(f"Failed to add skill collection relation: {str(e)}")
+                        logger.error(f"Failed to add skill collection relation for row: {str(e)}")
                         continue
                     pbar.update(1)
+
+            logger.info(f"Completed processing {collection_file}")
 
     def create_skill_skill_relations(self):
         """Create skill-to-skill relations in Weaviate from skillSkillRelations_en.csv."""
@@ -1074,6 +1111,13 @@ class WeaviateIngestor(BaseIngestor):
             with tqdm(total=11, desc="ESCO Ingestion Progress", unit="step",
                      bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
                 
+                # Step 1: Initialize schema or delete all data if force_reingest
+                if force_reingest:
+                    self.delete_all_data()
+                else:
+                    self.initialize_schema()
+                pbar.update(1)
+                
                 # Check for existing data and handle re-ingestion
                 if not force_reingest:
                     existing_classes = []
@@ -1089,11 +1133,7 @@ class WeaviateIngestor(BaseIngestor):
                             for class_name in existing_classes:
                                 if class_name in ["ISCOGroup", "Occupation", "Skill", "SkillCollection", "SkillGroup"]:
                                      pbar.update(1) # only update for main entity types
-                
-                # Step 1: Delete existing data if force_reingest is True
-                if force_reingest:
-                    self.delete_all_data()
-                pbar.update(1)
+                            return
                 
                 # Step 2: Ingest ISCO groups if not exists or force_reingest
                 if force_reingest or not self.check_class_exists("ISCOGroup"):

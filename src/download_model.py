@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-import logging
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import os
 import shutil
 import sys
 import glob
-import requests
-from tqdm import tqdm
-from pathlib import Path
-import torch
 from src.logging_config import setup_logging
 
 # Setup logging

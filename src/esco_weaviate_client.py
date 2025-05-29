@@ -1,10 +1,9 @@
 import weaviate
 import yaml
 import logging
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
-import numpy as np
+from typing import Dict, List, Any
 from pathlib import Path
-import os
+from threading import Lock
 from weaviate.exceptions import UnexpectedStatusCodeException
 from .exceptions import WeaviateError, ConfigurationError
 from .logging_config import log_error
@@ -13,30 +12,64 @@ from .repositories.repository_factory import RepositoryFactory
 logger = logging.getLogger(__name__)
 
 class WeaviateClient:
-    _instance = None
-    _initialized = False
+    __instance = None
+    __lock = Lock()
+    __config_path = None
+    __profile = None
+    __schema_lock = Lock()  # New lock specifically for schema operations
 
     def __new__(cls, config_path: str = "config/weaviate_config.yaml", profile: str = "default"):
-        if cls._instance is None:
-            cls._instance = super(WeaviateClient, cls).__new__(cls)
-        return cls._instance
+        with cls.__lock:
+            if cls.__instance is None:
+                cls.__instance = super(WeaviateClient, cls).__new__(cls)
+                # Store initial configuration
+                cls.__config_path = config_path
+                cls.__profile = profile
+                # Initialize instance attributes
+                cls.__instance.__initialized = False
+                cls.__instance.__schema_initialized = False
+                cls.__instance.client = None
+                cls.__instance.config = None
+            else:
+                # Check if configuration matches
+                if cls.__config_path != config_path or cls.__profile != profile:
+                    logger.warning(
+                        f"Attempting to create WeaviateClient with different configuration. "
+                        f"Using existing instance with config_path='{cls.__config_path}' "
+                        f"and profile='{cls.__profile}' instead."
+                    )
+            return cls.__instance
 
     def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default"):
         """Initialize Weaviate client with configuration."""
-        if self._initialized:
-            return
+        with self.__lock:
+            if self.__initialized:
+                return
+            
+            try:
+                self.config = self._load_config(config_path, profile)
+                self.client = self._initialize_client()
+                self.__initialized = True
+            except Exception as e:
+                log_error(logger, e, {'config_path': config_path, 'profile': profile})
+                # Reset instance on initialization failure
+                self.__class__.__instance = None
+                raise WeaviateError(f"Failed to initialize Weaviate client: {str(e)}")
 
-        if not config_path:
-            config_path = "config/weaviate_config.yaml"
-        try:
-            self.config = self._load_config(config_path, profile)
-            self.client = self._initialize_client()
-            self._schema_initialized = False  # Add flag to track schema initialization
-            self._ensure_schema()
-            self._initialized = True
-        except Exception as e:
-            log_error(logger, e, {'config_path': config_path, 'profile': profile})
-            raise WeaviateError(f"Failed to initialize Weaviate client: {str(e)}")
+    @classmethod
+    def get_instance(cls, config_path: str = "config/weaviate_config.yaml", profile: str = "default") -> 'WeaviateClient':
+        """Factory method to get or create a WeaviateClient instance."""
+        return cls(config_path, profile)
+
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance. Mainly useful for testing."""
+        with cls.__lock:
+            if cls.__instance is not None:
+                cls.__instance.close()
+            cls.__instance = None
+            cls.__config_path = None
+            cls.__profile = None
 
     def _load_config(self, config_path: str, profile: str) -> Dict:
         """Load configuration from YAML file."""
@@ -55,9 +88,11 @@ class WeaviateClient:
         """Initialize Weaviate client with configuration."""
         try:
             weaviate_config = self.config.get('weaviate', {})
+            url = weaviate_config['url']
+            
+            # Create client with the new API
             return weaviate.Client(
-                url=weaviate_config['url'],
-                additional_headers={},
+                url=url,
                 timeout_config=(5, 60)  # (connect timeout, read timeout)
             )
         except Exception as e:
@@ -82,44 +117,53 @@ class WeaviateClient:
         """Load reference properties from the references file."""
         return self._load_schema_file("references")
 
+    def is_schema_initialized(self) -> bool:
+        """Check if schema is already initialized."""
+        return self.__schema_initialized
+
     def _ensure_schema(self):
         """Ensure the required schema exists in Weaviate."""
-        if self._schema_initialized:  # Skip if already initialized
-            logger.info("Schema already initialized, skipping...")
+        if self.__schema_initialized:  # Quick check without lock
+            logger.debug("Schema already initialized, skipping...")
             return
 
-        try:
-            # Load and create base schemas
-            schemas = {
-                "ISCOGroup": self._load_schema_file("isco_group"),
-                "Skill": self._load_schema_file("skill"),
-                "SkillCollection": self._load_schema_file("skill_collection"),
-                "Occupation": self._load_schema_file("occupation"),
-                "SkillGroup": self._load_schema_file("skill_group")
-            }
+        with self.__schema_lock:  # Use schema-specific lock
+            if self.__schema_initialized:  # Double-check after acquiring lock
+                logger.debug("Schema already initialized (after lock), skipping...")
+                return
 
-            # Create base collections first
-            for class_name, schema in schemas.items():
-                if not self.client.schema.exists(class_name):
-                    logger.info(f"Creating schema class: {class_name}")
+            try:
+                # Load and create base schemas
+                schemas = {
+                    "ISCOGroup": self._load_schema_file("isco_group"),
+                    "Skill": self._load_schema_file("skill"),
+                    "SkillCollection": self._load_schema_file("skill_collection"),
+                    "Occupation": self._load_schema_file("occupation"),
+                    "SkillGroup": self._load_schema_file("skill_group")
+                }
+
+                # Create base collections first
+                for class_name, schema in schemas.items():
                     try:
-                        self.client.schema.create_class(schema)
+                        if not self.client.schema.exists(class_name):
+                            logger.info(f"Creating schema class: {class_name}")
+                            self.client.schema.create_class(schema)
+                        else:
+                            logger.debug(f"Schema class {class_name} already exists")
                     except UnexpectedStatusCodeException as e:
-                        # Check if the error is due to the class already existing
                         if "already exists" in str(e).lower():
-                            logger.warning(f"Schema class {class_name} already exists, but 'exists' check failed. Continuing.")
+                            logger.debug(f"Schema class {class_name} already exists (caught exception)")
                         else:
                             raise WeaviateError(f"Failed to create schema class {class_name}: {str(e)}")
-                else:
-                    logger.info(f"Schema class {class_name} already exists")
 
-            # Add reference properties after all classes exist
-            self._add_reference_properties()
-            self._schema_initialized = True  # Mark schema as initialized
-                
-        except Exception as e:
-            log_error(logger, e, {'operation': 'ensure_schema'})
-            raise WeaviateError(f"Failed to create schema: {str(e)}")
+                # Add reference properties after all classes exist
+                self._add_reference_properties()
+                self.__schema_initialized = True  # Mark schema as initialized
+                logger.info("Schema initialization completed successfully")
+                    
+            except Exception as e:
+                log_error(logger, e, {'operation': 'ensure_schema'})
+                raise WeaviateError(f"Failed to create schema: {str(e)}")
 
     def _add_reference_properties(self):
         """Add reference properties after all classes are created."""
@@ -134,7 +178,7 @@ class WeaviateClient:
                 for ref in refs:
                     # Skip if property already exists
                     if ref["name"] in existing_prop_names:
-                        logger.info(f"Property {ref['name']} already exists in class {class_name}, skipping...")
+                        logger.debug(f"Property {ref['name']} already exists in class {class_name}, skipping...")
                         continue
                         
                     try:
@@ -145,25 +189,41 @@ class WeaviateClient:
                         logger.info(f"Successfully added property {ref['name']} to class {class_name}")
                     except UnexpectedStatusCodeException as e:
                         if "already exists" in str(e).lower():
-                            logger.warning(f"Property {ref['name']} already exists in class {class_name}, skipping...")
+                            logger.debug(f"Property {ref['name']} already exists in class {class_name}, skipping...")
                         else:
                             raise WeaviateError(f"Failed to add property {ref['name']} to class {class_name}: {str(e)}")
         except Exception as e:
             log_error(logger, e, {'operation': 'add_reference_properties'})
             raise WeaviateError(f"Failed to add reference properties: {str(e)}")
 
-    def _property_exists(self, class_name: str, property_name: str) -> bool:
-        """Check if a property exists in a class."""
-        try:
-            schema = self.client.schema.get(class_name)
-            return any(prop.get("name") == property_name for prop in schema.get("properties", []))
-        except Exception as e:
-            log_error(logger, e, {
-                'operation': 'property_exists',
-                'class_name': class_name,
-                'property_name': property_name
-            })
-            return False
+    def reset_schema(self):
+        """Reset schema initialization state and delete all schema classes."""
+        with self.__schema_lock:
+            try:
+                # Get all existing classes
+                schema = self.client.schema.get()
+                classes = [cls["class"] for cls in schema.get("classes", [])]
+                
+                # Delete each class
+                for class_name in classes:
+                    try:
+                        self.client.schema.delete_class(class_name)
+                        logger.info(f"Deleted schema class: {class_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete class {class_name}: {str(e)}")
+                
+                # Reset initialization flag
+                self.__schema_initialized = False
+                logger.info("Schema reset completed")
+            except Exception as e:
+                log_error(logger, e, {'operation': 'reset_schema'})
+                raise WeaviateError(f"Failed to reset schema: {str(e)}")
+
+    def ensure_schema(self):
+        """Public method to ensure schema exists. This is the recommended way to initialize schema."""
+        if not self.__initialized:
+            raise WeaviateError("Client not initialized. Call __init__ first.")
+        self._ensure_schema()
 
     def get_repository(self, repository_type: str):
         """Get a repository instance for the specified type."""

@@ -1,25 +1,19 @@
 #!/usr/bin/env python3
 import argparse
-import logging
 from typing import List, Optional, Dict
 from tqdm import tqdm
 import torch
 from concurrent.futures import ThreadPoolExecutor
 import gc
-import time
 from functools import lru_cache
-import platform
-import importlib
 import yaml
 import os
 import glob
-import json
 from datetime import datetime
 from src.esco_weaviate_client import WeaviateClient
-from transformers import MarianMTModel, MarianTokenizer, AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import MarianMTModel, MarianTokenizer
 from src.logging_config import setup_logging, log_error
-from pathlib import Path
-from .exceptions import TranslationError, ModelError
+from .exceptions import ModelError
 
 # Setup logging
 logger = setup_logging()

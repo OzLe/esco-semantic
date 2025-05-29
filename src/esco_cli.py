@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
-import logging
 import os
 import yaml
 import json
-from datetime import datetime
 import click
-from pathlib import Path
-from typing import Optional, TYPE_CHECKING
-import pandas as pd
 
 # Local imports
-from src.embedding_utils import ESCOEmbedding, generate_embeddings
 from src.esco_ingest import create_ingestor
-from src.esco_translate import ESCOTranslator
 from src.download_model import download_model
 from src.logging_config import setup_logging
 from src.weaviate_semantic_search import ESCOSemanticSearch
@@ -224,6 +217,11 @@ def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, c
             print_section("Deleting Existing Data")
             ingestor.delete_all_data()
             print(colorize("✓ All data deleted", Colors.GREEN))
+        else:
+            # Initialize schema if not deleting all data
+            print_section("Initializing Schema")
+            ingestor.initialize_schema()
+            print(colorize("✓ Schema initialized", Colors.GREEN))
         
         # Determine which classes to ingest
         classes_to_ingest = list(classes) if classes else ['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']
@@ -358,6 +356,69 @@ def download_model():
         print(colorize("\n✓ Model downloaded successfully", Colors.GREEN))
     except Exception as e:
         logger.error(f"Model download failed: {str(e)}")
+        raise click.ClickException(str(e))
+
+@cli.command()
+@click.option('--title', required=True, help='Job title to enrich')
+@click.option('--description', required=True, help='Job description to enrich')
+@click.option('--max-occupations', default=5, help='Maximum number of occupations to return')
+@click.option('--max-skills', default=15, help='Maximum number of skills to extract')
+@click.option('--config', default='config/weaviate_config.yaml', help='Path to Weaviate configuration file')
+@click.option('--profile', default='default', help='Configuration profile to use')
+@click.option('--json', is_flag=True, help='Output results in JSON format')
+def enrich(title: str, description: str, max_occupations: int, max_skills: int, config: str, profile: str, json: bool):
+    """Enrich a job posting with ESCO taxonomy."""
+    try:
+        print_header("ESCO Job Posting Enrichment")
+        print(f"Job Title: {colorize(title, Colors.BOLD)}")
+        
+        # Initialize the search engine
+        search_engine = ESCOSemanticSearch(
+            config_path=config,
+            profile=profile
+        )
+        
+        # Enrich the job posting
+        print_section("Enriching job posting with ESCO taxonomy...")
+        enrichment_result = search_engine.enrich_job_posting(
+            job_title=title,
+            job_description=description,
+            max_occupations=max_occupations,
+            max_skills=max_skills
+        )
+        
+        if json:
+            # Get summary and output as JSON
+            summary = search_engine.get_enrichment_summary(enrichment_result)
+            print("\n" + format_json_output(summary))
+        else:
+            # Display results in a formatted way
+            print(f"\n📊 Job Title: {enrichment_result.job_title}")
+            print(f"🎯 Overall Confidence: {enrichment_result.confidence_score:.2%}")
+            
+            print(f"\n🏢 Matched Occupations ({len(enrichment_result.matched_occupations)}):")
+            for i, occupation in enumerate(enrichment_result.matched_occupations, 1):
+                print(f"  {i}. {occupation['preferredLabel_en']} (Score: {occupation['similarity_score']:.2%})")
+                if occupation.get('description_en'):
+                    print(f"     {occupation['description_en'][:100]}...")
+            
+            print(f"\n🛠️ Extracted Skills ({len(enrichment_result.extracted_skills)}):")
+            for i, skill in enumerate(enrichment_result.extracted_skills[:10], 1):
+                print(f"  {i}. {skill['preferredLabel_en']} (Score: {skill['similarity_score']:.2%})")
+                print(f"     Type: {skill.get('skillType', 'Unknown')}")
+            
+            if enrichment_result.skill_gaps:
+                print(f"\n⚠️ Skill Gaps ({len(enrichment_result.skill_gaps)}):")
+                for i, gap in enumerate(enrichment_result.skill_gaps[:5], 1):
+                    print(f"  {i}. {gap['preferredLabel_en']} (Essential for matched occupations)")
+            
+            if enrichment_result.isco_groups:
+                print(f"\n📋 ISCO Classifications:")
+                for group in enrichment_result.isco_groups:
+                    print(f"  • {group['preferredLabel_en']} (Code: {group.get('code', 'N/A')})")
+        
+    except Exception as e:
+        logger.error(f"Enrichment failed: {str(e)}")
         raise click.ClickException(str(e))
 
 if __name__ == "__main__":
