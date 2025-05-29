@@ -61,7 +61,7 @@ class ESCOSemanticSearch:
         
         Returns:
             Tuple[bool, Dict[str, Any]]: (is_valid, validation_details)
-            - is_valid: True if all required data is present and valid
+            - is_valid: True if at least one type of data is present and valid
             - validation_details: Dictionary containing detailed validation results
         """
         validation_details = {
@@ -83,33 +83,11 @@ class ESCOSemanticSearch:
             validation_details["occupations_count"] = occupation_result["data"]["Aggregate"]["Occupation"][0]["meta"]["count"]
             validation_details["occupations_indexed"] = validation_details["occupations_count"] > 0
             
-            # Validate relationships if both types are indexed
-            if validation_details["skills_indexed"] and validation_details["occupations_indexed"]:
-                # Sample check for relationships
-                sample_skill = self.client.client.query.get("Skill", ["conceptUri"]).with_limit(1).do()
-                if sample_skill and "data" in sample_skill and "Get" in sample_skill["data"] and "Skill" in sample_skill["data"]["Get"] and sample_skill["data"]["Get"]["Skill"]:
-                    skill_uri = sample_skill["data"]["Get"]["Skill"][0]["conceptUri"]
-                    related_occupations = self.client.client.query.get(
-                        "Occupation", ["conceptUri"]
-                    ).with_where({
-                        "path": ["hasEssentialSkill"],
-                        "operator": "ContainsAny",
-                        "valueString": [skill_uri]
-                    }).do()
-                    
-                    if related_occupations and "data" in related_occupations and "Get" in related_occupations["data"] and "Occupation" in related_occupations["data"]["Get"]:
-                        validation_details["has_relationships"] = len(related_occupations["data"]["Get"]["Occupation"]) > 0
-                    else:
-                        validation_details["has_relationships"] = False
-                        validation_details["errors"].append("Could not validate relationships between skills and occupations")
-                else:
-                    validation_details["has_relationships"] = False
-                    validation_details["errors"].append("Could not find a sample skill to validate relationships")
-            
-            is_valid = validation_details["skills_indexed"] and validation_details["occupations_indexed"]
+            # Consider valid if at least one type is indexed
+            is_valid = validation_details["skills_indexed"] or validation_details["occupations_indexed"]
             
             if not is_valid:
-                validation_details["errors"].append("Missing required data")
+                validation_details["errors"].append("No data is indexed")
             
             return is_valid, validation_details
             
@@ -140,7 +118,7 @@ class ESCOSemanticSearch:
         
         # Generate query embedding using the sentence transformer model
         query_embedding = self.model.encode(query_text)
-        if not query_embedding:
+        if query_embedding is None or query_embedding.size == 0:
             logger.error("Failed to generate embedding for query text")
             return []
         
@@ -148,7 +126,7 @@ class ESCOSemanticSearch:
             if node_type == "Skill":
                 result = (
                     self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel", "description"])
+                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_near_vector({
                         "vector": query_embedding,
                         "certainty": similarity_threshold
@@ -157,11 +135,14 @@ class ESCOSemanticSearch:
                     .with_additional(["certainty"])
                     .do()
                 )
+                if not result or "data" not in result:
+                    logger.error(f"Invalid Weaviate response for Skill search: {result}")
+                    return []
                 results = result["data"]["Get"]["Skill"]
             elif node_type == "Occupation":
                 result = (
                     self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel", "description"])
+                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_near_vector({
                         "vector": query_embedding,
                         "certainty": similarity_threshold
@@ -170,12 +151,15 @@ class ESCOSemanticSearch:
                     .with_additional(["certainty"])
                     .do()
                 )
+                if not result or "data" not in result:
+                    logger.error(f"Invalid Weaviate response for Occupation search: {result}")
+                    return []
                 results = result["data"]["Get"]["Occupation"]
             else:
                 # Search both skills and occupations
                 skill_result = (
                     self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel", "description"])
+                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_near_vector({
                         "vector": query_embedding,
                         "certainty": similarity_threshold
@@ -187,7 +171,7 @@ class ESCOSemanticSearch:
                 
                 occupation_result = (
                     self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel", "description"])
+                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_near_vector({
                         "vector": query_embedding,
                         "certainty": similarity_threshold
@@ -196,6 +180,14 @@ class ESCOSemanticSearch:
                     .with_additional(["certainty"])
                     .do()
                 )
+                
+                if not skill_result or "data" not in skill_result:
+                    logger.error(f"Invalid Weaviate response for Skill search: {skill_result}")
+                    skill_result = {"data": {"Get": {"Skill": []}}}
+                
+                if not occupation_result or "data" not in occupation_result:
+                    logger.error(f"Invalid Weaviate response for Occupation search: {occupation_result}")
+                    occupation_result = {"data": {"Get": {"Occupation": []}}}
                 
                 # Combine and sort results
                 results = []
@@ -215,8 +207,8 @@ class ESCOSemanticSearch:
             for record in results:
                 search_results.append({
                     "uri": record["conceptUri"],
-                    "label": record["preferredLabel"],
-                    "description": record.get("description", ""),
+                    "label": record["preferredLabel_en"],
+                    "description": record.get("description_en", ""),
                     "type": record.get("type", node_type),
                     "score": record["_additional"]["certainty"]
                 })
@@ -234,7 +226,7 @@ class ESCOSemanticSearch:
                 # Get the skill node
                 skill_result = (
                     self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel", "description"])
+                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_where({
                         "path": ["conceptUri"],
                         "operator": "Equal",
@@ -251,7 +243,7 @@ class ESCOSemanticSearch:
                 # Get related occupations
                 occupation_result = (
                     self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel", "description"])
+                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_where({
                         "path": ["hasEssentialSkill"],
                         "operator": "ContainsAny",
@@ -262,7 +254,7 @@ class ESCOSemanticSearch:
                 
                 optional_occupation_result = (
                     self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel", "description"])
+                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_where({
                         "path": ["hasOptionalSkill"],
                         "operator": "ContainsAny",
@@ -274,9 +266,9 @@ class ESCOSemanticSearch:
                 # Get related skills
                 related_skills_result = (
                     self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel", "description"])
+                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_near_vector({
-                        "vector": self.model.encode(skill["preferredLabel"]),
+                        "vector": self.model.encode(skill["preferredLabel_en"]),
                         "certainty": 0.7
                     })
                     .with_limit(10)
@@ -287,31 +279,31 @@ class ESCOSemanticSearch:
                 graph_data = {
                     "node": {
                         "uri": skill["conceptUri"],
-                        "label": skill["preferredLabel"],
-                        "description": skill.get("description", "")
+                        "label": skill["preferredLabel_en"],
+                        "description": skill.get("description_en", "")
                     },
                     "related": {
                         "essential_occupations": [
                             {
                                 "uri": o["conceptUri"],
-                                "label": o["preferredLabel"],
-                                "description": o.get("description", "")
+                                "label": o["preferredLabel_en"],
+                                "description": o.get("description_en", "")
                             }
                             for o in occupation_result["data"]["Get"]["Occupation"]
                         ],
                         "optional_occupations": [
                             {
                                 "uri": o["conceptUri"],
-                                "label": o["preferredLabel"],
-                                "description": o.get("description", "")
+                                "label": o["preferredLabel_en"],
+                                "description": o.get("description_en", "")
                             }
                             for o in optional_occupation_result["data"]["Get"]["Occupation"]
                         ],
                         "related_skills": [
                             {
                                 "uri": s["conceptUri"],
-                                "label": s["preferredLabel"],
-                                "description": s.get("description", "")
+                                "label": s["preferredLabel_en"],
+                                "description": s.get("description_en", "")
                             }
                             for s in related_skills_result["data"]["Get"]["Skill"]
                             if s["conceptUri"] != uri  # Exclude the original skill
@@ -323,7 +315,7 @@ class ESCOSemanticSearch:
                 # Get the occupation node
                 occupation_result = (
                     self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel", "description"])
+                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_where({
                         "path": ["conceptUri"],
                         "operator": "Equal",
@@ -340,10 +332,10 @@ class ESCOSemanticSearch:
                 # Get essential skills
                 essential_skills_result = (
                     self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel", "description"])
+                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_where({
                         "path": ["conceptUri"],
-                        "operator": "In",
+                        "operator": "ContainsAny",
                         "valueString": occupation.get("hasEssentialSkill", [])
                     })
                     .do()
@@ -352,10 +344,10 @@ class ESCOSemanticSearch:
                 # Get optional skills
                 optional_skills_result = (
                     self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel", "description"])
+                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_where({
                         "path": ["conceptUri"],
-                        "operator": "In",
+                        "operator": "ContainsAny",
                         "valueString": occupation.get("hasOptionalSkill", [])
                     })
                     .do()
@@ -364,9 +356,9 @@ class ESCOSemanticSearch:
                 # Get related occupations
                 related_occupations_result = (
                     self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel", "description"])
+                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
                     .with_near_vector({
-                        "vector": self.model.encode(occupation["preferredLabel"]),
+                        "vector": self.model.encode(occupation["preferredLabel_en"]),
                         "certainty": 0.7
                     })
                     .with_limit(10)
@@ -377,33 +369,33 @@ class ESCOSemanticSearch:
                 graph_data = {
                     "node": {
                         "uri": occupation["conceptUri"],
-                        "label": occupation["preferredLabel"],
-                        "description": occupation.get("description", "")
+                        "label": occupation["preferredLabel_en"],
+                        "description": occupation.get("description_en", "")
                     },
                     "related": {
                         "essential_skills": [
                             {
                                 "uri": s["conceptUri"],
-                                "label": s["preferredLabel"],
-                                "description": s.get("description", "")
+                                "label": s["preferredLabel_en"],
+                                "description": s.get("description_en", "")
                             }
-                            for s in essential_skills_result["data"]["Get"]["Skill"]
+                            for s in (essential_skills_result.get("data", {}).get("Get", {}).get("Skill", []) or [])
                         ],
                         "optional_skills": [
                             {
                                 "uri": s["conceptUri"],
-                                "label": s["preferredLabel"],
-                                "description": s.get("description", "")
+                                "label": s["preferredLabel_en"],
+                                "description": s.get("description_en", "")
                             }
-                            for s in optional_skills_result["data"]["Get"]["Skill"]
+                            for s in (optional_skills_result.get("data", {}).get("Get", {}).get("Skill", []) or [])
                         ],
                         "related_occupations": [
                             {
                                 "uri": o["conceptUri"],
-                                "label": o["preferredLabel"],
-                                "description": o.get("description", "")
+                                "label": o["preferredLabel_en"],
+                                "description": o.get("description_en", "")
                             }
-                            for o in related_occupations_result["data"]["Get"]["Occupation"]
+                            for o in (related_occupations_result.get("data", {}).get("Get", {}).get("Occupation", []) or [])
                             if o["conceptUri"] != uri  # Exclude the original occupation
                         ]
                     }

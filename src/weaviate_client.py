@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Any
 import numpy as np
 from pathlib import Path
 import os
+from weaviate.exceptions import UnexpectedStatusCodeException
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,18 @@ class WeaviateClient:
             # Create base collections first
             for class_name, schema in schemas.items():
                 if not self.client.schema.exists(class_name):
-                    self.client.schema.create_class(schema)
+                    logger.info(f"Creating schema class: {class_name}")
+                    try:
+                        self.client.schema.create_class(schema)
+                    except weaviate.exceptions.UnexpectedStatusCodeException as e:
+                        # Check if the error is due to the class already existing
+                        if "already exists" in str(e).lower():
+                            logger.warning(f"Schema class {class_name} already exists, but 'exists' check failed. Continuing.")
+                        else:
+                            # If it's a different error, re-raise it
+                            raise
+                else:
+                    logger.info(f"Schema class {class_name} already exists")
 
             # Add reference properties after all classes exist
             self._add_reference_properties()
