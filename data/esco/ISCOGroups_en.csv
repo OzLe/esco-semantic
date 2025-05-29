@@ -784,26 +784,26 @@ ISCOGroup,http://data.europa.eu/esco/isco/C14,14,"Hospitality, retail and other 
 http://data.europa.eu/esco/concept-scheme/isco","Hospitality, retail and other services managers plan, organize and direct the operations of establishments which provide accommodation, hospitality, retail and other services. Competent performance in most occupations in this sub-major group requires skills at the third ISCO skill level.
 Tasks performed by workers in this sub-major group usually include:  planning and organizing special functions, sporting, gaming and entertainment activities and the range and mix of products, stock levels and service standards; promoting and selling goods and services;  observing liquor, gaming, health and other laws and regulations;   developing and reviewing policies, programmes and procedures concerning customer relations and goods and services provided; promoting facilities for conferences, conventions and trade shows to potential customers; organizing the purchase and maintenance of transport vehicles, equipment and fuel, and transporting goods;  controlling the selection, training and supervision of staff;  ensuring compliance with occupational health and safety regulations.
 Occupations in this sub-major group are classified into the following minor groups:
-141 Hotel and Restaurant Managers
+141 Hotel and Restcloudnt Managers
 142 Retail and Wholesale Trade Managers
 143 Other Services Managers 
 Notes
 Sub-major Group 14: Hospitality, Retail and Other Services Managers is for managers of establishments that provide services directly to the public, usually in organizations that are too small to have hierarchies of managers. Managers responsible for planning, directing and coordinating the provision of specialized professional and technical services that usually require specialized qualifications are classified in various unit groups in Sub-major Groups 12: Administrative and Commercial Managers and 13: Production and Specialized Services Managers.
-Operators of small shops, guest houses, cafés, restaurants and bars for whom the management and supervision of staff is not a significant component of the work are classified in the relevant unit group  in Sub-major Groups  51: Personal Services Workers or 52: Sales Workers, depending on the main tasks performed. 
+Operators of small shops, guest houses, cafés, restcloudnts and bars for whom the management and supervision of staff is not a significant component of the work are classified in the relevant unit group  in Sub-major Groups  51: Personal Services Workers or 52: Sales Workers, depending on the main tasks performed. 
 "
-ISCOGroup,http://data.europa.eu/esco/isco/C141,141,Hotel and restaurant managers,released,,"http://data.europa.eu/esco/concept-scheme/isco,
-http://data.europa.eu/esco/concept-scheme/occupations","Hotel and restaurant managers plan, organize and direct the operations of establishments that provide accommodation, meals, beverages and other hospitality services.
+ISCOGroup,http://data.europa.eu/esco/isco/C141,141,Hotel and restcloudnt managers,released,,"http://data.europa.eu/esco/concept-scheme/isco,
+http://data.europa.eu/esco/concept-scheme/occupations","Hotel and restcloudnt managers plan, organize and direct the operations of establishments that provide accommodation, meals, beverages and other hospitality services.
 Tasks performed usually include: planning and organizing special functions and sporting, gaming and entertainment activities; directing and overseeing reservation, reception, room service and housekeeping activities; observing liquor, gaming, health and other laws and regulations; monitoring quality at all stages of preparation and presentation of food and services; controlling the selection, training and supervision of staff; ensuring compliance with occupational health and safety regulations.
 Occupations in this minor group are classified into the following unit groups:
 1411 Hotel Managers
-1412 Restaurant Managers
+1412 Restcloudnt Managers
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C1411,1411,Hotel managers,released,,"http://data.europa.eu/esco/concept-scheme/occupations,
 http://data.europa.eu/esco/concept-scheme/isco","Hotel managers plan, organize and direct the operations of hotels, motels and similar establishments to provide guest accommodation and other services.
 Tasks include - 
 (a)  directing and overseeing reservation, reception, room service and housekeeping activities;
 (b)  supervising security arrangements and garden and property maintenance;
-(c)  planning and supervising bar, restaurant, function and conference activities;
+(c)  planning and supervising bar, restcloudnt, function and conference activities;
 (d)  observing liquor, gaming and other laws and regulations;
 (e)  assessing and reviewing customer satisfaction;
 (f)  overseeing accounting and purchasing activities;
@@ -821,8 +821,8 @@ Notes
 Operators of small establishments, such as some bed and breakfast establishments and small guest houses that provide accommodation and limited meal services to clients effectively as paying guests in private households, and for whom the management and supervision of staff is not a significant component of the work, are classified in Unit Group 5152: Domestic Housekeepers.
 Chief executive officers and specialized managers of hotel management companies or hotel chains are classified in the relevant unit group in Sub-major Groups 11 and 12.
 "
-ISCOGroup,http://data.europa.eu/esco/isco/C1412,1412,Restaurant managers,released,,"http://data.europa.eu/esco/concept-scheme/isco,
-http://data.europa.eu/esco/concept-scheme/occupations","Restaurant managers plan, organize and direct the operations of cafés, restaurants and related establishments to provide dining and catering services.
+ISCOGroup,http://data.europa.eu/esco/isco/C1412,1412,Restcloudnt managers,released,,"http://data.europa.eu/esco/concept-scheme/isco,
+http://data.europa.eu/esco/concept-scheme/occupations","Restcloudnt managers plan, organize and direct the operations of cafés, restcloudnts and related establishments to provide dining and catering services.
 Tasks include - 
 (a)  planning menus in consultation with chefs and cooks;
 (b)  planning and organizing special functions;
@@ -837,11 +837,11 @@ Tasks include -
 Examples of the occupations classified here:
 -  Café manager
 -  Catering manager
--  Restaurant manager
+-  Restcloudnt manager
 Some related occupations classified elsewhere:
 -  Chef - 3434
 Note
-Operators of small cafés, restaurants and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
+Operators of small cafés, restcloudnts and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C142,142,Retail and wholesale trade managers,released,,"http://data.europa.eu/esco/concept-scheme/occupations,
 http://data.europa.eu/esco/concept-scheme/isco","Retail and wholesale trade managers plan, organize, coordinate and control the operations of establishments that sell goods on a retail or wholesale basis. They are responsible for the budgets, staffing and strategic and operational direction of shops, or of organizational units within shops that sell particular types of product.
@@ -5065,7 +5065,7 @@ Examples of the occupations classified here:
 - Taxidermist
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C3434,3434,Chefs,released,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/isco","Chefs design menus, create dishes and oversee the planning, organization, preparation and cooking of meals in hotels, restaurants and other eating places, on board ships, on passenger trains and in private households.
+http://data.europa.eu/esco/concept-scheme/isco","Chefs design menus, create dishes and oversee the planning, organization, preparation and cooking of meals in hotels, restcloudnts and other eating places, on board ships, on passenger trains and in private households.
 Tasks include -
 (a)  planning and developing recipes and menus, estimating food and labour costs, and ordering food supplies;
 (b)  monitoring quality of dishes at all stages of preparation and presentation;
@@ -5438,7 +5438,7 @@ ISCOGroup,http://data.europa.eu/esco/isco/C4221,4221,Travel consultants and cler
 http://data.europa.eu/esco/concept-scheme/occupations","Travel consultants and clerks provide information about travel destinations, arrange travel itineraries, obtain travel and accommodation reservations and register passengers at check-in and departure.
 Tasks include -
 (a)  obtaining information about the availability, cost and convenience of different types of transport and accommodation, ascertaining customers’ requirements and advising them on travel arrangements;
-(b) providing information about local and regional attractions, sightseeing tours, restaurants, arts and entertainment, and providing maps and brochures;
+(b) providing information about local and regional attractions, sightseeing tours, restcloudnts, arts and entertainment, and providing maps and brochures;
 (c)  preparing itineraries;
 (d)  making and confirming reservations for travel, tours and accommodation;
 (e)  issuing tickets, boarding passes and vouchers;
@@ -5873,13 +5873,13 @@ Examples of the occupations classified here:
 - Tourist guide
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C512,512,Cooks,released,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/isco","Cooks plan, organize, prepare and cook meals, according to recipes or under the supervision of chefs, in hotels, restaurants and other eating places, on board ships, on passenger trains and in private households.
+http://data.europa.eu/esco/concept-scheme/isco","Cooks plan, organize, prepare and cook meals, according to recipes or under the supervision of chefs, in hotels, restcloudnts and other eating places, on board ships, on passenger trains and in private households.
 Tasks performed usually include: planning meals; preparing and cooking foodstuffs; planning, supervising and coordinating the work of kitchen helpers; checking the quality of food; weighing, measuring and mixing ingredients according to recipes and personal judgement; regulating the temperature of ovens, grills, roasters and other cooking equipment; inspecting and cleaning the kitchen, kitchen equipment, serving areas, etc. to ensure safe and sanitary food handling practices; and operating large-volume cooking equipment such as grills, deep-fat fryers, or griddles.
 Occupations in this minor group are classified into the following unit group:
 5120 Cooks
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C5120,5120,Cooks,released,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/isco","Cooks plan, organize, prepare and cook meals, according to recipes or under the supervision of chefs, in hotels, restaurants and other eating places, on board ships, on passenger trains and in private households.
+http://data.europa.eu/esco/concept-scheme/isco","Cooks plan, organize, prepare and cook meals, according to recipes or under the supervision of chefs, in hotels, restcloudnts and other eating places, on board ships, on passenger trains and in private households.
 Tasks include -
 (a)  planning meals, preparing and cooking foodstuffs;
 (b)  planning, supervising and coordinating the work of kitchen helpers; 
@@ -5891,11 +5891,11 @@ Examples of the occupations classified here:
 - Cook
 Some related occupations classified elsewhere:
 - Café manager - 1412 
-- Restaurant manager - 1412
+- Restcloudnt manager - 1412
 - Chef - 3434
 - Fast food preparer - 9411
 Notes
-Operators of small cafés, restaurants and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
+Operators of small cafés, restcloudnts and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C513,513,Waiters and bartenders,released,,"http://data.europa.eu/esco/concept-scheme/isco,
 http://data.europa.eu/esco/concept-scheme/occupations","Waiters and bartenders serve food and beverages in commercial dining and drinking places, clubs, institutions and canteens, on board ships and on passenger trains.
@@ -5919,10 +5919,10 @@ Examples of the occupations classified here:
 - Waiter
 Some related occupations classified elsewhere:
 - Café manager - 1412 
-- Restaurant manager - 1412
+- Restcloudnt manager - 1412
 - Bartender - 5132
 Notes
-Operators of small cafés, restaurants and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
+Operators of small cafés, restcloudnts and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C5132,5132,Bartenders,released,,"http://data.europa.eu/esco/concept-scheme/isco,
 http://data.europa.eu/esco/concept-scheme/occupations","Bartenders prepare, mix and serve alcoholic and non-alcoholic drinks directly to customers over a bar or counter, or through waiters.
@@ -5941,10 +5941,10 @@ Examples of the occupations classified here:
 - Bartender
 Some related occupations classified elsewhere:
 - Café manager - 1412 
-- Restaurant manager - 1412
+- Restcloudnt manager - 1412
 - Waiter - 5131
 Notes
-Operators of small cafés, restaurants and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
+Operators of small cafés, restcloudnts and bars for whom the management and supervision of staff is not a significant component of the work are classified in Unit Groups 5120: Cooks, 5131: Waiters or 5132: Bartenders, depending on the main tasks performed. 
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C514,514,"Hairdressers, beauticians and related workers",released,,"http://data.europa.eu/esco/concept-scheme/occupations,
 http://data.europa.eu/esco/concept-scheme/isco","Hairdressers, beauticians and related workers cut and dress hair, shave and trim beards, give beauty treatments, apply cosmetics and make-up and give other kinds of treatment to individuals in order to improve their appearance.
@@ -6150,7 +6150,7 @@ Some related occupations classified elsewhere:
 ISCOGroup,http://data.europa.eu/esco/isco/C5169,5169,Personal services workers not elsewhere classified,released,,"http://data.europa.eu/esco/concept-scheme/isco,
 http://data.europa.eu/esco/concept-scheme/occupations","This unit group covers personal service workers not classified elsewhere in Sub-major Group 51: Personal Services Workers. For instance, those who provide services and companionship as dancing partners, social escorts and night-club hostesses or hosts are classified here.
 In such cases tasks would include -
-(a)  accompanying clients to restaurants and other outings;
+(a)  accompanying clients to restcloudnts and other outings;
 (b)  acting as a dancing partner;
 (c)  welcoming clients to a night-club and ensuring that they are entertained well.
 Examples of the occupations classified here:
@@ -6301,13 +6301,13 @@ Some related occupations classified elsewhere:
 - Food service counter attendant - 5246
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C523,523,Cashiers and ticket clerks,released,,"http://data.europa.eu/esco/concept-scheme/isco,
-http://data.europa.eu/esco/concept-scheme/occupations","Cashiers and ticket clerks operate cash registers, optical price scanners, computers or other equipment to record and accept payment for the purchase of goods, services and admissions in settings such as stores, restaurants and ticket offices.
+http://data.europa.eu/esco/concept-scheme/occupations","Cashiers and ticket clerks operate cash registers, optical price scanners, computers or other equipment to record and accept payment for the purchase of goods, services and admissions in settings such as stores, restcloudnts and ticket offices.
 Tasks performed usually include: receiving and verifying payment by cash, cheque, credit card or automatic debit in stores, ticket offices or similar establishments; giving change and issuing receipts; issuing tickets at ticket offices and taking corresponding payments; counting and recording money received or paid out and balancing against cash register sales records; receiving incoming cash, checking it against sales slips and other documents, and preparing it for deposit at bank; operating cash registers to calculate totals to be paid from or to clients; scanning, weighing and recording prices of goods; wrapping and placing merchandise in bags.
 Occupations in this minor group are classified into the following unit group:
 5230 Cashiers and Ticket Clerks
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C5230,5230,Cashiers and ticket clerks,released,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/isco","Cashiers and ticket clerks operate cash registers, optical price scanners, computers or other equipment to record and accept payment for the purchase of goods, services and admissions in settings such as stores, restaurants and ticket offices.
+http://data.europa.eu/esco/concept-scheme/isco","Cashiers and ticket clerks operate cash registers, optical price scanners, computers or other equipment to record and accept payment for the purchase of goods, services and admissions in settings such as stores, restcloudnts and ticket offices.
 Tasks include -
 (a)  receiving and verifying payment by cash, cheque, credit card or automatic debit in stores, ticket offices or similar establishments;
 (b)  giving change and issuing receipts;
@@ -6436,7 +6436,7 @@ Note
 Workers who accept payment or sell goods in shops at service stations but do not provide forecourt services such as assistance with fuel, lubricants, cleaning and maintenance are excluded from Unit Group 5245: Service Station Attendants.
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C5246,5246,Food service counter attendants,released,,"http://data.europa.eu/esco/concept-scheme/isco,
-http://data.europa.eu/esco/concept-scheme/occupations","Food service counter attendants serve customers at food counters and finish preparation of simple food items in restaurants, cafés, hotels, fast food outlets, cafeterias, hospitals and other settings.
+http://data.europa.eu/esco/concept-scheme/occupations","Food service counter attendants serve customers at food counters and finish preparation of simple food items in restcloudnts, cafés, hotels, fast food outlets, cafeterias, hospitals and other settings.
 Tasks include -
 (a)  serving food to customers at counters; 
 (b)  ascertaining the products desired by customers, assisting them in making choices and taking orders; 
@@ -7896,7 +7896,7 @@ Tasks include -
 (e)  adjusting lips, reeds, or toe holes of organ pipes, using hand tools, to regulate airflow and loudness of sound;
 (f)  tuning and servicing pipe organs by adjusting pitch of organ A pipes to conform with pitch of the tuning fork and adjusting pitch of other pipes with reference to pitch of tuned pipes;
 (g)  installing new drumheads in percussion instruments;
-(h)  tuning accordions by aurally comparing pitch of reeds with master reeds and filing reeds to obtain standard pitch;
+(h)  tuning accordions by cloudlly comparing pitch of reeds with master reeds and filing reeds to obtain standard pitch;
 (i)  aligning pads and keys on reed or wind instruments;
 (j)  tuning percussion instruments to required pitch by tightening or loosening cords holding leather pieces fixed atop or at both ends of the instrument;
 (k)  assembling and installing new pipe organs and pianos in buildings.
@@ -10171,13 +10171,13 @@ Examples of the occupations classified here:
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C94,94,Food preparation assistants,released,,"http://data.europa.eu/esco/concept-scheme/occupations,
 http://data.europa.eu/esco/concept-scheme/isco","Food preparation assistants prepare and cook to order a small variety of pre-cooked food or beverages, clear tables, clean kitchen areas and wash dishes. Most occupations in this sub-major group require skills at the first ISCO skill level.
-Tasks performed by workers in this sub-major group usually include: preparing simple or pre-prepared foods and beverages such as sandwiches, pizzas, fish and chips, salads and coffee; washing, cutting, measuring and mixing foods for cooking; operating cooking equipment such as grills, microwaves and deep-fat fryers; cleaning kitchens, food preparation areas and service areas; cleaning cooking and general utensils used in kitchens and restaurants.
+Tasks performed by workers in this sub-major group usually include: preparing simple or pre-prepared foods and beverages such as sandwiches, pizzas, fish and chips, salads and coffee; washing, cutting, measuring and mixing foods for cooking; operating cooking equipment such as grills, microwaves and deep-fat fryers; cleaning kitchens, food preparation areas and service areas; cleaning cooking and general utensils used in kitchens and restcloudnts.
 Occupations in this sub-major group are classified into the following minor group:
 941 Food Preparation Assistants
 "
 ISCOGroup,http://data.europa.eu/esco/isco/C941,941,Food preparation assistants,released,,"http://data.europa.eu/esco/concept-scheme/isco,
 http://data.europa.eu/esco/concept-scheme/occupations","Food preparation assistants prepare and cook to order a small variety of pre-cooked food or beverages, clear tables, clean kitchen areas and wash dishes.
-Tasks performed usually include: preparing simple or pre-prepared foods and beverages such as sandwiches, pizzas, fish and chips, salads and coffee; washing, cutting, measuring and mixing foods for cooking; operating cooking equipment such as grills, microwaves and deep-fat fryers; cleaning kitchens, food preparation areas and service areas; cleaning cooking and general utensils used in kitchens and restaurants.
+Tasks performed usually include: preparing simple or pre-prepared foods and beverages such as sandwiches, pizzas, fish and chips, salads and coffee; washing, cutting, measuring and mixing foods for cooking; operating cooking equipment such as grills, microwaves and deep-fat fryers; cleaning kitchens, food preparation areas and service areas; cleaning cooking and general utensils used in kitchens and restcloudnts.
 Occupations in this minor group are classified into the following unit groups:
 9411 Fast Food Preparers
 9412 Kitchen Helpers

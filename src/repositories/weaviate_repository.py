@@ -5,7 +5,7 @@ from .base_repository import BaseRepository
 from ..exceptions import WeaviateError
 
 if TYPE_CHECKING:
-    from ..weaviate_client import WeaviateClient
+    from ..esco_weaviate_client import WeaviateClient
 
 logger = logging.getLogger(__name__)
 
@@ -170,4 +170,12 @@ class WeaviateRepository(BaseRepository):
             return len(result["data"]["Get"][self.class_name]) > 0
         except Exception as e:
             logger.error(f"Error checking existence of {self.class_name} {uri}: {str(e)}")
-            return False 
+            return False
+    
+    def batch_import(self, data_list: List[Dict[str, Any]], vectors: List[np.ndarray]) -> List[str]:
+        """Import multiple entities in a batch (wrapper for batch_create)."""
+        return self.batch_create(data_list, vectors)
+    
+    def check_object_exists(self, uri: str) -> bool:
+        """Check if an object with the given URI exists."""
+        return self.exists(uri) 

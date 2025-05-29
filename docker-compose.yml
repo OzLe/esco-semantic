@@ -64,8 +64,8 @@ services:
       - ./src:/app/src
       - ./config:/app/config
     command: >
-      sh -c "python -m src.esco_cli ingest --config config/weaviate_config.yaml --profile aura && tail -f /dev/null"
-    restart: unless-stopped
+      sh -c "python -m src.esco_cli ingest --config config/weaviate_config.yaml --profile default"
+    restart: "no"
     networks:
       - esco_network
 
@@ -73,6 +73,8 @@ services:
     build: .
     container_name: esco_search
     depends_on:
+      esco-ingest:
+        condition: service_completed_successfully
       weaviate:
         condition: service_healthy
       t2v-transformers:
@@ -88,7 +90,7 @@ services:
     ports:
       - "8000:8000"
     command: >
-      sh -c "python -m src.search_service && tail -f /dev/null"
+      sh -c "python -m src.search_service"
     restart: unless-stopped
     networks:
       - esco_network

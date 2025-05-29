@@ -1,7 +1,7 @@
 import weaviate
 import yaml
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 import numpy as np
 from pathlib import Path
 import os
@@ -13,14 +13,27 @@ from .repositories.repository_factory import RepositoryFactory
 logger = logging.getLogger(__name__)
 
 class WeaviateClient:
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, config_path: str = "config/weaviate_config.yaml", profile: str = "default"):
+        if cls._instance is None:
+            cls._instance = super(WeaviateClient, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default"):
         """Initialize Weaviate client with configuration."""
+        if self._initialized:
+            return
+
         if not config_path:
             config_path = "config/weaviate_config.yaml"
         try:
             self.config = self._load_config(config_path, profile)
             self.client = self._initialize_client()
+            self._schema_initialized = False  # Add flag to track schema initialization
             self._ensure_schema()
+            self._initialized = True
         except Exception as e:
             log_error(logger, e, {'config_path': config_path, 'profile': profile})
             raise WeaviateError(f"Failed to initialize Weaviate client: {str(e)}")
@@ -71,6 +84,10 @@ class WeaviateClient:
 
     def _ensure_schema(self):
         """Ensure the required schema exists in Weaviate."""
+        if self._schema_initialized:  # Skip if already initialized
+            logger.info("Schema already initialized, skipping...")
+            return
+
         try:
             # Load and create base schemas
             schemas = {
@@ -98,6 +115,7 @@ class WeaviateClient:
 
             # Add reference properties after all classes exist
             self._add_reference_properties()
+            self._schema_initialized = True  # Mark schema as initialized
                 
         except Exception as e:
             log_error(logger, e, {'operation': 'ensure_schema'})
@@ -109,12 +127,27 @@ class WeaviateClient:
             references = self._load_references()
             
             for class_name, refs in references.items():
+                # Get existing properties for the class
+                existing_props = self.client.schema.get(class_name).get("properties", [])
+                existing_prop_names = {prop.get("name") for prop in existing_props}
+                
                 for ref in refs:
-                    if not self._property_exists(class_name, ref["name"]):
+                    # Skip if property already exists
+                    if ref["name"] in existing_prop_names:
+                        logger.info(f"Property {ref['name']} already exists in class {class_name}, skipping...")
+                        continue
+                        
+                    try:
                         self.client.schema.property.create(
                             class_name,
                             ref
                         )
+                        logger.info(f"Successfully added property {ref['name']} to class {class_name}")
+                    except UnexpectedStatusCodeException as e:
+                        if "already exists" in str(e).lower():
+                            logger.warning(f"Property {ref['name']} already exists in class {class_name}, skipping...")
+                        else:
+                            raise WeaviateError(f"Failed to add property {ref['name']} to class {class_name}: {str(e)}")
         except Exception as e:
             log_error(logger, e, {'operation': 'add_reference_properties'})
             raise WeaviateError(f"Failed to add reference properties: {str(e)}")

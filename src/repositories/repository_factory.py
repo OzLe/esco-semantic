@@ -8,7 +8,7 @@ from .skill_collection_repository import SkillCollectionRepository
 from .skill_group_repository import SkillGroupRepository
 
 if TYPE_CHECKING:
-    from ..weaviate_client import WeaviateClient
+    from ..esco_weaviate_client import WeaviateClient
 
 class RepositoryFactory:
     """Factory for creating and managing repository instances."""

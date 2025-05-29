@@ -6,17 +6,16 @@ import json
 from datetime import datetime
 import click
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import pandas as pd
 
 # Local imports
-from src.weaviate_semantic_search import ESCOSemanticSearch
 from src.embedding_utils import ESCOEmbedding, generate_embeddings
 from src.esco_ingest import create_ingestor
 from src.esco_translate import ESCOTranslator
 from src.download_model import download_model
 from src.logging_config import setup_logging
-from src.weaviate_client import WeaviateClient
+from src.weaviate_semantic_search import ESCOSemanticSearch
 
 # Setup logging
 logger = setup_logging()
@@ -214,6 +213,7 @@ def cli():
 @click.option('--force-reingest', is_flag=True, help='Force re-ingestion of all classes regardless of existing data')
 def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, classes: tuple, skip_relations: bool, force_reingest: bool):
     """Ingest ESCO data into Weaviate."""
+    ingestor = None
     try:
         print_header("ESCO Data Ingestion")
         
@@ -261,10 +261,11 @@ def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, c
         print(colorize("\n✓ Ingestion completed successfully", Colors.GREEN))
         
     except Exception as e:
-        logger.error(f"Ingestion failed: {str(e)}")
-        raise click.ClickException(str(e))
+        logger.error(f"Ingestion failed: {str(e)}, Type: {type(e)}, Repr: {repr(e)}")
+        raise click.ClickException(f"Error: {str(e)} Type: {type(e)} Repr: {repr(e)}")
     finally:
-        ingestor.close()
+        if ingestor is not None:
+            ingestor.close()
 
 @cli.command()
 @click.option('--query', required=True, help='Search query')

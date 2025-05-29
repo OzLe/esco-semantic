@@ -3,7 +3,7 @@ import numpy as np
 from .weaviate_repository import WeaviateRepository
 
 if TYPE_CHECKING:
-    from ..weaviate_client import WeaviateClient
+    from ..esco_weaviate_client import WeaviateClient
 
 class SkillRepository(WeaviateRepository):
     """Repository for Skill entities."""
@@ -134,4 +134,52 @@ class SkillRepository(WeaviateRepository):
             return True
         except Exception as e:
             self.logger.error(f"Failed to add hierarchical relation between {broader_uri} and {narrower_uri}: {str(e)}")
+            return False 
+    
+    def add_broader_skill_relation(self, skill_uri: str, broader_uri: str) -> bool:
+        """Add a broaderSkill reference from a Skill to another Skill."""
+        try:
+            # Get skill ID
+            skill_result = (
+                self.client.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": skill_uri
+                })
+                .do()
+            )
+            if not skill_result["data"]["Get"]["Skill"]:
+                return False
+            skill_id = skill_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+
+            # Get broader skill ID
+            broader_result = (
+                self.client.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": broader_uri
+                })
+                .do()
+            )
+            if not broader_result["data"]["Get"]["Skill"]:
+                return False
+            broader_id = broader_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+
+            # Add relation
+            self.client.client.data_object.reference.add(
+                from_uuid=skill_id,
+                from_class_name="Skill",
+                from_property_name="broaderSkill",
+                to_uuid=broader_id,
+                to_class_name="Skill"
+            )
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to add broader skill relation: {str(e)}")
             return False 

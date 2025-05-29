@@ -1,8 +1,8 @@
 import logging
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any, Tuple, TYPE_CHECKING
 from sentence_transformers import SentenceTransformer
 from src.logging_config import setup_logging
-from src.weaviate_client import WeaviateClient
+from src.esco_weaviate_client import WeaviateClient
 import torch
 import os
 import yaml

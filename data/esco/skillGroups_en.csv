@@ -615,7 +615,7 @@ Broad secretarial programmes comprising among other things computer courses are 
 === Exclusions
 Separate programmes or qualifications in using a specific computer software are excluded from this detailed field and included under detailed field 0611 'Computer use'.
 Office management is excluded from this detailed field and included in detailed field 0413 'Management and administration'.
-Hotel receptionist programmes are excluded from this detailed field and included in detailed field 1013 'Hotel, restaurant and catering'.",0415
+Hotel receptionist programmes are excluded from this detailed field and included in detailed field 1013 'Hotel, restcloudnt and catering'.",0415
 SkillGroup,http://data.europa.eu/esco/isced-f/0416,wholesale and retail sales,,,released,2023-07-04T10:39:53.648Z,,"http://data.europa.eu/esco/concept-scheme/skills
 http://data.europa.eu/esco/concept-scheme/skills-hierarchy
 http://data.europa.eu/esco/concept-scheme/isced-f","Wholesale and retail sales is the study of buying and selling goods and services, including stock management, pricing practices, loss prevention, sales systems and procedures. It includes the study of the workings and current trends of the wholesale and retail industries. Selling of buildings and properties is also included.
@@ -1093,7 +1093,7 @@ Wine production
 Study of food handling and food hygiene is included here.
 
 === Exclusions
-Restaurant and catering are excluded from this detailed field and included in detailed field 1013 'Hotel, restaurant and catering'.
+Restcloudnt and catering are excluded from this detailed field and included in detailed field 1013 'Hotel, restcloudnt and catering'.
 Nutrition science is excluded from this detailed field and included in narrow field 051 'Biological and related sciences'.
 0722 Materials (glass, paper, plastic and wood)
 Materials is the study of the manufacturing of products in glass, paper, plastic, wood or other materials like stone, clay, artificial materials etc. Programmes and qualifications included in this detailed field have more to do with a specific material than general technical knowledge.
@@ -1609,16 +1609,16 @@ Fitness and weight control
 Hairdressing
 Manicure
 Pedicure",1012
-SkillGroup,http://data.europa.eu/esco/isced-f/1013,"hotel, restaurants and catering",,,released,2023-07-05T09:23:20.685Z,,"http://data.europa.eu/esco/concept-scheme/isced-f
+SkillGroup,http://data.europa.eu/esco/isced-f/1013,"hotel, restcloudnts and catering",,,released,2023-07-05T09:23:20.685Z,,"http://data.europa.eu/esco/concept-scheme/isced-f
 http://data.europa.eu/esco/concept-scheme/skills-hierarchy
-http://data.europa.eu/esco/concept-scheme/skills","Hotel, restaurants and catering is the study of providing food, beverages, accommodation and related services at hotels, restaurants etc.
+http://data.europa.eu/esco/concept-scheme/skills","Hotel, restcloudnts and catering is the study of providing food, beverages, accommodation and related services at hotels, restcloudnts etc.
 Programmes and qualifications with the following main content are classified here:
 Catering
-Cooking (restaurant and hotel-type)
+Cooking (restcloudnt and hotel-type)
 Fast food preparation
 Food serving
 Hospitality services
-Hotel and restaurant studies
+Hotel and restcloudnt studies
 Hotel receptionist training
 Hotel services
 Waiting and bar service
@@ -2068,7 +2068,7 @@ SkillGroup,http://data.europa.eu/esco/skill/1bb32451-7ca4-4fa2-a2c0-2083c426d76c
 - serve food in table service
 - prepare service trolleys
 - serve wines","http://data.europa.eu/esco/concept-scheme/skills-hierarchy
-http://data.europa.eu/esco/concept-scheme/skills","Serving food and beverages to clients in restaurants, canteens, cafes, bars, transportation equipment or other locations.",S3.5.2
+http://data.europa.eu/esco/concept-scheme/skills","Serving food and beverages to clients in restcloudnts, canteens, cafes, bars, transportation equipment or other locations.",S3.5.2
 SkillGroup,http://data.europa.eu/esco/skill/1bc1cf2a-a7f6-4769-a13b-cc26a2214498,"preparing documentation for contracts, applications, or permits",,,released,2022-06-22T10:53:34.19Z,"Examples:
 - prepare building permit applications
 - issue permits

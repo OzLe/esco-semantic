@@ -3,7 +3,7 @@ import numpy as np
 from .weaviate_repository import WeaviateRepository
 
 if TYPE_CHECKING:
-    from ..weaviate_client import WeaviateClient
+    from ..esco_weaviate_client import WeaviateClient
 
 class SkillGroupRepository(WeaviateRepository):
     """Repository for Skill Group entities."""

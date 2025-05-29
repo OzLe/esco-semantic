@@ -10,7 +10,7 @@ import numpy as np
 import click
 
 # Local imports
-from src.weaviate_client import WeaviateClient
+from src.esco_weaviate_client import WeaviateClient
 from src.embedding_utils import ESCOEmbedding
 from src.logging_config import setup_logging
 
@@ -205,8 +205,11 @@ class WeaviateIngestor(BaseIngestor):
         try:
             # Delete all collections
             for collection in ["Occupation", "Skill", "ISCOGroup", "SkillCollection", "SkillGroup"]:
-                if self.client.client.schema.exists(collection):
-                    self.client.client.schema.delete_class(collection)
+                if self.occupation_repo.client.client.schema.exists(collection):
+                    self.occupation_repo.client.client.schema.delete_class(collection)
+            
+            # Reset schema initialization flag
+            self.client._schema_initialized = False
             
             logger.info("Deleted all data from Weaviate")
         except Exception as e:
@@ -216,14 +219,13 @@ class WeaviateIngestor(BaseIngestor):
     def check_class_exists(self, class_name: str) -> bool:
         """Check if a class exists in Weaviate and has data"""
         try:
-            if not self.client.client.schema.exists(class_name):
-                return False
-            
-            # Get the appropriate repository
             repo = self.client.get_repository(class_name)
-            
-            # Check if class has any objects
-            result = self.client.client.query.aggregate(class_name).with_meta_count().do()
+            # Use repo to check if class has any objects
+            # We'll use the check_object_exists method with a dummy UUID (since we don't know a specific one)
+            # Instead, use the aggregate query to check count
+            if not repo.client.client.schema.exists(class_name):
+                return False
+            result = repo.client.client.query.aggregate(class_name).with_meta_count().do()
             count = result.get('data', {}).get('Aggregate', {}).get(class_name, [{}])[0].get('meta', {}).get('count', 0)
             return count > 0
         except Exception as e:
@@ -563,7 +565,7 @@ class WeaviateIngestor(BaseIngestor):
                     optional_skills = [uri.split('/')[-1] for uri in group[group['relationType'] == 'optional']['skillUri'].tolist()]
                     
                     # Add relations
-                    self.skill_repo.add_skill_relations(
+                    self.occupation_repo.add_skill_relations(
                         occupation_uri=occupation_uuid,
                         essential_skills=essential_skills,
                         optional_skills=optional_skills
@@ -663,10 +665,6 @@ class WeaviateIngestor(BaseIngestor):
         `add_occupation_group_relation`, it will be used; otherwise the method
         exits with a warning so the CLI does not crash.
         """
-        if not hasattr(self.client, "add_occupation_group_relation"):
-            logger.warning("WeaviateClient has no 'add_occupation_group_relation' method – skipping ISCO‑group relations.")
-            return
-
         file_path = os.path.join(self.esco_dir, 'occupations_en.csv')
         if not os.path.exists(file_path):
             logger.error(f"Occupations file not found at {file_path}; cannot create ISCO‑group relations.")
@@ -684,7 +682,7 @@ class WeaviateIngestor(BaseIngestor):
                 try:
                     occupation_uuid = row['conceptUri'].split('/')[-1]
                     group_uuid = row['iscoGroup'].split('/')[-1]
-                    self.client.add_occupation_group_relation(
+                    self.occupation_repo.add_occupation_group_relation(
                         occupation_uri=occupation_uuid,
                         group_uri=group_uuid
                     )
@@ -771,7 +769,7 @@ class WeaviateIngestor(BaseIngestor):
             if groups_to_import and group_vectors:
                 logger.info(f"Starting batch import of {len(groups_to_import)} skill groups")
                 try:
-                    self.client.batch_import_skill_groups(groups_to_import, group_vectors)
+                    self.skill_group_repo.batch_import(groups_to_import, group_vectors)
                     logger.info(f"Successfully ingested {len(groups_to_import)} skill groups into Weaviate")
                 except Exception as e:
                     failed_imports = len(groups_to_import)
@@ -876,7 +874,7 @@ class WeaviateIngestor(BaseIngestor):
             if collections_to_import and collection_vectors:
                 logger.info(f"Starting batch import of {len(collections_to_import)} skill collections")
                 try:
-                    self.client.batch_import_skill_collections(collections_to_import, collection_vectors)
+                    self.skill_collection_repo.batch_import(collections_to_import, collection_vectors)
                     logger.info(f"Successfully ingested {len(collections_to_import)} skill collections into Weaviate")
                 except Exception as e:
                     failed_imports = len(collections_to_import)
@@ -941,7 +939,7 @@ class WeaviateIngestor(BaseIngestor):
                         skill_uuid = row['conceptUri'].split('/')[-1]
 
                         # Check if skill exists
-                        skill_exists = self.client.check_object_exists("Skill", skill_uuid)
+                        skill_exists = self.skill_repo.check_object_exists(skill_uuid)
                         if not skill_exists:
                             logger.warning(f"Skill {skill_uuid} not found - skipping relation")
                             continue
@@ -951,13 +949,13 @@ class WeaviateIngestor(BaseIngestor):
                             collection_uuid = collection_uri.split('/')[-1]
                             
                             # Check if collection exists
-                            collection_exists = self.client.check_object_exists("SkillCollection", collection_uuid)
+                            collection_exists = self.skill_collection_repo.check_object_exists(collection_uuid)
                             if not collection_exists:
                                 logger.warning(f"Skill collection {collection_uuid} not found - skipping relation")
                                 continue
 
                             # Add relation
-                            self.client.add_skill_collection_relation(
+                            self.skill_collection_repo.add_skill_collection_relation(
                                 collection_uri=collection_uuid,
                                 skill_uri=skill_uuid
                             )
@@ -1000,8 +998,8 @@ class WeaviateIngestor(BaseIngestor):
                     relation_type = row['relationType']
 
                     # Check existence before creating relation
-                    from_skill_exists = self.client.check_object_exists("Skill", from_skill_uuid)
-                    to_skill_exists = self.client.check_object_exists("Skill", to_skill_uuid)
+                    from_skill_exists = self.skill_repo.check_object_exists(from_skill_uuid)
+                    to_skill_exists = self.skill_repo.check_object_exists(to_skill_uuid)
 
                     if not from_skill_exists:
                         logger.warning(f"Original skill {from_skill_uuid} not found. Skipping relation to {to_skill_uuid}.")
@@ -1012,7 +1010,7 @@ class WeaviateIngestor(BaseIngestor):
                         pbar.update(1)
                         continue
                     
-                    self.client.add_skill_to_skill_relation(
+                    self.skill_repo.add_skill_to_skill_relation(
                         from_skill_uri=from_skill_uuid,
                         to_skill_uri=to_skill_uuid,
                         relation_type=relation_type
@@ -1049,8 +1047,8 @@ class WeaviateIngestor(BaseIngestor):
                     broader_uuid = row['broaderUri'].split('/')[-1]
 
                     # Check if both skills exist before creating relation
-                    skill_exists = self.client.check_object_exists("Skill", skill_uuid)
-                    broader_exists = self.client.check_object_exists("Skill", broader_uuid)
+                    skill_exists = self.skill_repo.check_object_exists(skill_uuid)
+                    broader_exists = self.skill_repo.check_object_exists(broader_uuid)
 
                     if not skill_exists:
                         logger.warning(f"Skill {skill_uuid} not found - skipping relation")
@@ -1060,7 +1058,7 @@ class WeaviateIngestor(BaseIngestor):
                         continue
 
                     # Add relation
-                    self.client.add_broader_skill_relation(
+                    self.skill_repo.add_broader_skill_relation(
                         skill_uri=skill_uuid,
                         broader_uri=broader_uuid
                     )
@@ -1068,20 +1066,6 @@ class WeaviateIngestor(BaseIngestor):
                     logger.error(f"Failed to add broader skill relation: {str(e)}")
                     continue
                 pbar.update(1)
-
-    def check_class_exists(self, class_name: str) -> bool:
-        """Check if a class exists in Weaviate and has data"""
-        try:
-            if not self.client.client.schema.exists(class_name):
-                return False
-            
-            # Check if class has any objects
-            result = self.client.client.query.aggregate(class_name).with_meta_count().do()
-            count = result.get('data', {}).get('Aggregate', {}).get(class_name, [{}])[0].get('meta', {}).get('count', 0)
-            return count > 0
-        except Exception as e:
-            logger.error(f"Error checking existence of {class_name}: {str(e)}")
-            return False
 
     def run_ingest(self, force_reingest: bool = False):
         """Run the complete Weaviate ingestion process"""

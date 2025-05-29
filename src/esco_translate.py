@@ -15,7 +15,7 @@ import os
 import glob
 import json
 from datetime import datetime
-from src.weaviate_client import WeaviateClient
+from src.esco_weaviate_client import WeaviateClient
 from transformers import MarianMTModel, MarianTokenizer, AutoTokenizer, AutoModelForSeq2SeqLM
 from src.logging_config import setup_logging, log_error
 from pathlib import Path

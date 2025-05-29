@@ -25,10 +25,15 @@ default:
     cache_dir: "model_cache"
     batch_size: 100
 
-aura:
+  # ESCO settings (required by ingestor)
+  esco:
+    data_dir: "data/esco"
+    batch_size: 100
+
+cloud:
   # Weaviate settings
   weaviate:
-    url: "http://weaviate:8080"
+    url: "YOUR_WEAVIATE_CLOUD_ENDPOINT_HERE"  # <-- Set your Weaviate Cloud Service endpoint here
     vector_index_config:
       distance: "cosine"
       efConstruction: 128
@@ -50,4 +55,9 @@ aura:
     embedding_model: "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
     translation_model: "Helsinki-NLP/opus-mt-en-he"
     cache_dir: "model_cache"
+    batch_size: 100
+
+  # ESCO settings (required by ingestor)
+  esco:
+    data_dir: "data/esco"
     batch_size: 100 

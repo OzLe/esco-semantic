@@ -1236,7 +1236,7 @@ Excludes:
 - veterinary surgery
 ",S,S3,S3.2,S3.2.2
 http://data.europa.eu/esco/skill/335228d2-297d-4e0e-a6ee-bc6a8dc110d9,skills,http://data.europa.eu/esco/skill/c73521be-c039-4e22-b037-3b01b3f6f9d9,assisting and caring,http://data.europa.eu/esco/skill/b85711bc-32d6-42af-ae0f-e2e566d0dfca,preparing and serving food and drinks,,,Providing food and beverage services.,,S,S3,S3.5
-http://data.europa.eu/esco/skill/335228d2-297d-4e0e-a6ee-bc6a8dc110d9,skills,http://data.europa.eu/esco/skill/c73521be-c039-4e22-b037-3b01b3f6f9d9,assisting and caring,http://data.europa.eu/esco/skill/b85711bc-32d6-42af-ae0f-e2e566d0dfca,preparing and serving food and drinks,http://data.europa.eu/esco/skill/1bb32451-7ca4-4fa2-a2c0-2083c426d76c,serving food and drinks,"Serving food and beverages to clients in restaurants, canteens, cafes, bars, transportation equipment or other locations.","Examples:
+http://data.europa.eu/esco/skill/335228d2-297d-4e0e-a6ee-bc6a8dc110d9,skills,http://data.europa.eu/esco/skill/c73521be-c039-4e22-b037-3b01b3f6f9d9,assisting and caring,http://data.europa.eu/esco/skill/b85711bc-32d6-42af-ae0f-e2e566d0dfca,preparing and serving food and drinks,http://data.europa.eu/esco/skill/1bb32451-7ca4-4fa2-a2c0-2083c426d76c,serving food and drinks,"Serving food and beverages to clients in restcloudnts, canteens, cafes, bars, transportation equipment or other locations.","Examples:
 - serve food in table service
 - prepare service trolleys
 - serve wines",S,S3,S3.5,S3.5.2
@@ -2172,7 +2172,7 @@ Broad secretarial programmes comprising among other things computer courses are 
 === Exclusions
 Separate programmes or qualifications in using a specific computer software are excluded from this detailed field and included under detailed field 0611 'Computer use'.
 Office management is excluded from this detailed field and included in detailed field 0413 'Management and administration'.
-Hotel receptionist programmes are excluded from this detailed field and included in detailed field 1013 'Hotel, restaurant and catering'.",,K,04,041,0415
+Hotel receptionist programmes are excluded from this detailed field and included in detailed field 1013 'Hotel, restcloudnt and catering'.",,K,04,041,0415
 http://data.europa.eu/esco/skill/c46fcb45-5c14-4ffa-abed-5a43f104bb22,knowledge,http://data.europa.eu/esco/isced-f/04,"business, administration and law",http://data.europa.eu/esco/isced-f/041,business and administration,http://data.europa.eu/esco/isced-f/0416,wholesale and retail sales,"Wholesale and retail sales is the study of buying and selling goods and services, including stock management, pricing practices, loss prevention, sales systems and procedures. It includes the study of the workings and current trends of the wholesale and retail industries. Selling of buildings and properties is also included.
 Programmes and qualifications with the following main content are classified here:
 Auctioneering
@@ -2530,7 +2530,7 @@ Wine production
 Study of food handling and food hygiene is included here.
 
 === Exclusions
-Restaurant and catering are excluded from this detailed field and included in detailed field 1013 'Hotel, restaurant and catering'.
+Restcloudnt and catering are excluded from this detailed field and included in detailed field 1013 'Hotel, restcloudnt and catering'.
 Nutrition science is excluded from this detailed field and included in narrow field 051 'Biological and related sciences'.
 0722 Materials (glass, paper, plastic and wood)
 Materials is the study of the manufacturing of products in glass, paper, plastic, wood or other materials like stone, clay, artificial materials etc. Programmes and qualifications included in this detailed field have more to do with a specific material than general technical knowledge.
@@ -2926,14 +2926,14 @@ Fitness and weight control
 Hairdressing
 Manicure
 Pedicure",,K,10,101,1012
-http://data.europa.eu/esco/skill/c46fcb45-5c14-4ffa-abed-5a43f104bb22,knowledge,http://data.europa.eu/esco/isced-f/10,services,http://data.europa.eu/esco/isced-f/101,personal services,http://data.europa.eu/esco/isced-f/1013,"hotel, restaurants and catering","Hotel, restaurants and catering is the study of providing food, beverages, accommodation and related services at hotels, restaurants etc.
+http://data.europa.eu/esco/skill/c46fcb45-5c14-4ffa-abed-5a43f104bb22,knowledge,http://data.europa.eu/esco/isced-f/10,services,http://data.europa.eu/esco/isced-f/101,personal services,http://data.europa.eu/esco/isced-f/1013,"hotel, restcloudnts and catering","Hotel, restcloudnts and catering is the study of providing food, beverages, accommodation and related services at hotels, restcloudnts etc.
 Programmes and qualifications with the following main content are classified here:
 Catering
-Cooking (restaurant and hotel-type)
+Cooking (restcloudnt and hotel-type)
 Fast food preparation
 Food serving
 Hospitality services
-Hotel and restaurant studies
+Hotel and restcloudnt studies
 Hotel receptionist training
 Hotel services
 Waiting and bar service

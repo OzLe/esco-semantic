@@ -4078,7 +4078,7 @@ Occupation,http://data.europa.eu/esco/occupation/1ae8d28e-407c-48ab-88ff-4cb25bf
 guest services manager
 guest concierge
 guest assistance manager",,released,2024-01-23T12:22:25.271Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/member-occupations","Hotel concierges provide information to customers, assist guests with various tasks such as making restaurant reservations, recommending entertainment highlights, booking transportation (limousines, airplanes, boats, etc.) and other services, procurement of tickets to special events, and assisting with various travel arrangements and tours of local attractions.",4229.2
+http://data.europa.eu/esco/concept-scheme/member-occupations","Hotel concierges provide information to customers, assist guests with various tasks such as making restcloudnt reservations, recommending entertainment highlights, booking transportation (limousines, airplanes, boats, etc.) and other services, procurement of tickets to special events, and assisting with various travel arrangements and tours of local attractions.",4229.2
 Occupation,http://data.europa.eu/esco/occupation/1b123879-8f0d-4793-8069-3dc21a08921a,2113,chemical application specialist,"formulation development engineer
 product development chemist
 chemical application technician
@@ -6772,7 +6772,7 @@ wine advisor
 sommelier
 wine steward
 wine choice consultant",,released,2024-01-23T12:25:11.138Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/member-occupations","Wine sommeliers have general knowledge about wine, its production, service and wind with food pairing. They make use of this knowledge for the management of specialised wine cellars, publish wine lists and books or work in restaurants.",5131.2.2.3
+http://data.europa.eu/esco/concept-scheme/member-occupations","Wine sommeliers have general knowledge about wine, its production, service and wind with food pairing. They make use of this knowledge for the management of specialised wine cellars, publish wine lists and books or work in restcloudnts.",5131.2.2.3
 Occupation,http://data.europa.eu/esco/occupation/2dc86f3d-a90e-4e7a-8a94-0bd728f22d7b,7115,frame maker,"frames builder
 frames creator
 mirror frame maker
@@ -8349,7 +8349,7 @@ Occupation,http://data.europa.eu/esco/occupation/39c89133-bd2a-45db-b3eb-529b94d
 licensing compliance officer
 licensing standards officer
 business permit licensing officer
-restaurant licensing officer
+restcloudnt licensing officer
 driver licensing officer
 license inspector
 patents officer
@@ -10333,7 +10333,7 @@ wine production specialist",,released,2024-01-26T14:17:58.841Z,http://data.europ
 http://data.europa.eu/esco/concept-scheme/member-occupations",Oenologists track the wine manufacturing process in its entirety and supervise the workers in wineries. They supervise and coordinate production to ensure the quality of the wine and also give advice by determining the value and classification of wines being produced.,2145.1.7
 Occupation,http://data.europa.eu/esco/occupation/499f80e3-860c-48ef-8286-be929a93e254,5131,sommelier,"wine manager
 wine waiter
-restaurant sommelier",,released,2024-01-23T12:25:00.57Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
+restcloudnt sommelier",,released,2024-01-23T12:25:00.57Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
 http://data.europa.eu/esco/concept-scheme/member-occupations","Sommeliers stock, prepare, advise on and serve wine and other alcoholic beverages.",5131.2.2
 Occupation,http://data.europa.eu/esco/occupation/49b21ca8-04be-4912-a2f7-0170550e18fa,7323,bindery operator,"bookbinder
 binder
@@ -10407,11 +10407,11 @@ drawing kiln operative
 glass kiln operator
 glass operative",,released,2024-01-16T09:36:54.026Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
 http://data.europa.eu/esco/concept-scheme/occupations",Drawing kiln operators are responsible for continuous sheet flat glass production by manipulating the drawing kiln that processes molten glass.,8181.4
-Occupation,http://data.europa.eu/esco/occupation/4a1125ee-5728-4b1f-b655-7b8eb2e27660,5246,quick service restaurant team leader,"fast food team leader
+Occupation,http://data.europa.eu/esco/occupation/4a1125ee-5728-4b1f-b655-7b8eb2e27660,5246,quick service restcloudnt team leader,"fast food team leader
 fast service team leader
 fast food shift team leader
 fast service shift team leader",,released,2024-01-23T13:51:52.859Z,http://data.europa.eu/esco/regulated-professions/unregulated,"Includes <a resource=""http://data.europa.eu/esco/occupation/4a1125ee-5728-4b1f-b655-7b8eb2e27660"" typeOf=""http://data.europa.eu/esco/model#Occupation"" href=""http://data.europa.eu/esco/occupation/4a1125ee-5728-4b1f-b655-7b8eb2e27660""><span property=""http://www.w3.org/2000/01/rdf-schema#label"" xml:lang=""en"">quick service shift team leaders</span></a>.",,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/member-occupations",Quick service restaurant team leaders manage operations in a quick service restaurant.,5246.2
+http://data.europa.eu/esco/concept-scheme/member-occupations",Quick service restcloudnt team leaders manage operations in a quick service restcloudnt.,5246.2
 Occupation,http://data.europa.eu/esco/occupation/4a13bafa-a2ac-4864-a278-176ea5969280,2433,"technical sales representative in hardware, plumbing and heating equipment","assistant technical sales representative in hardware, plumbing and heating  equipment
 technical saleswoman in hardware, plumbing and heating equipment
 technical salesperson in hardware, plumbing and heating equipment
@@ -11871,7 +11871,7 @@ Occupation,http://data.europa.eu/esco/occupation/53cdd34e-22f2-41bd-b3c7-de22bf9
 resident manager
 hotel general manager
 hospitality establishment director
-restaurant manager
+restcloudnt manager
 hotel director
 youth hostel manager
 hotel manager
@@ -16240,7 +16240,7 @@ http://data.europa.eu/esco/concept-scheme/member-occupations","Textile process c
 Occupation,http://data.europa.eu/esco/occupation/74cbe6fb-336f-4f3f-8c8f-7645b279a231,5152,domestic butler,"major-domo
 butler
 domestic house manager",,released,2024-01-25T09:16:21.291Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/member-occupations","Domestic butlers serve at official meals, monitor meal preparations and table setting and manage the household staff. They may also offer personal assistance in booking travel arrangements and restaurants, valeting and clothing care.",5152.2.1
+http://data.europa.eu/esco/concept-scheme/member-occupations","Domestic butlers serve at official meals, monitor meal preparations and table setting and manage the household staff. They may also offer personal assistance in booking travel arrangements and restcloudnts, valeting and clothing care.",5152.2.1
 Occupation,http://data.europa.eu/esco/occupation/74d47633-8e9e-4e08-9cba-d2292c211218,4323,dangerous goods safety adviser,"dangerous goods safety person
 dangerous goods transport person
 hazardous goods safety adviser
@@ -17635,7 +17635,7 @@ Occupation,http://data.europa.eu/esco/occupation/7e17f4ea-9565-41e0-b408-b52b5c9
 disco doorman
 bouncer
 bar doorman",,released,2024-01-16T14:40:06.556Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
-http://data.europa.eu/esco/concept-scheme/occupations","Door supervisors ensure that the people entering public places such as bars, restaurants and concert venues are suitable and that they do not represent potential problems. They enforce legal regulations by checking individuals' legal age to enter a bar, manage crowds and emergencies, monitor dress codes and handle aggressive and abusive behaviours.",5414.1.4
+http://data.europa.eu/esco/concept-scheme/occupations","Door supervisors ensure that the people entering public places such as bars, restcloudnts and concert venues are suitable and that they do not represent potential problems. They enforce legal regulations by checking individuals' legal age to enter a bar, manage crowds and emergencies, monitor dress codes and handle aggressive and abusive behaviours.",5414.1.4
 Occupation,http://data.europa.eu/esco/occupation/7e33b166-4a6d-40f3-8048-83b3a9d3ef49,7511,meat preparations operator,"meatworker
 abbatoir worker
 meat worker
@@ -20654,14 +20654,14 @@ http://data.europa.eu/esco/concept-scheme/occupations","Railway passenger servic
 Occupation,http://data.europa.eu/esco/occupation/969f8af0-3c0d-403a-9c16-a6fb76c6b443,2651,conceptual artist,"conceptual creator
 concept artist",,released,2024-01-25T11:29:43.168Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
 http://data.europa.eu/esco/concept-scheme/occupations","Conceptual artists choose any material as an artistic tool or/and material to be presented as an artistic experience to the public. Their work, belonging to the fine arts, can be two-dimensional (drawing, painting, collage), three-dimensional (sculpture, installation) or four-dimensional (moving images, performance).",2651.5
-Occupation,http://data.europa.eu/esco/occupation/96a0d8d3-d4a6-473d-80d6-b5dbadde940a,9411,quick service restaurant crew member,"fast food crew member
+Occupation,http://data.europa.eu/esco/occupation/96a0d8d3-d4a6-473d-80d6-b5dbadde940a,9411,quick service restcloudnt crew member,"fast food crew member
 quick service crew member
 snack maker
 fast-food crew member
 crepes maker
 fast food worker
 pancakes maker",,released,2024-01-23T10:53:13.201Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
-http://data.europa.eu/esco/concept-scheme/occupations","Quick service restaurant crew members prepare, cook and serve food and beverages in a quick service operation.",9411.2
+http://data.europa.eu/esco/concept-scheme/occupations","Quick service restcloudnt crew members prepare, cook and serve food and beverages in a quick service operation.",9411.2
 Occupation,http://data.europa.eu/esco/occupation/96be6ac3-5932-4bfc-933d-84b267d0d486,2621,collection manager,"conservator
 museum technician
 curator
@@ -21066,7 +21066,7 @@ http://data.europa.eu/esco/concept-scheme/occupations,
 http://data.europa.eu/esco/concept-scheme/8ae4b9f3-507e-4057-a145-2f96f0132613","Thanatology researchers study death and the dying in a variety of scientific fields such as psychology, sociology, physiology and anthropology. They contribute to the growth of knowledge on aspects of death such as the psychological phenomena the dying and those around them are experiencing. ",2632.7
 Occupation,http://data.europa.eu/esco/occupation/985400a7-362f-4f91-941a-2e149d94ac2a,5131,beer sommelier,"beer selection advisor
 beer advisor",,released,2024-01-23T12:25:03.274Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/member-occupations","Beer sommeliers understand and advise on styles, brewing and best pairing of beers with foods in locations such as restaurants, breweries and shops. They know all about their ingredients, the history of the beers, glassware and draught systems. They prepare beer tastings, consult companies and customers, evaluate beer products and write about this subject.",5131.2.2.1
+http://data.europa.eu/esco/concept-scheme/member-occupations","Beer sommeliers understand and advise on styles, brewing and best pairing of beers with foods in locations such as restcloudnts, breweries and shops. They know all about their ingredients, the history of the beers, glassware and draught systems. They prepare beer tastings, consult companies and customers, evaluate beer products and write about this subject.",5131.2.2.1
 Occupation,http://data.europa.eu/esco/occupation/98588703-5f5c-41c6-a240-3411b6518b83,3331,import export specialist in pharmaceutical goods,"senior import export specialist in pharmaceutical goods
 trainee export specialist in pharmaceutical goods
 assistant import specialist in pharmaceutical goods
@@ -22161,13 +22161,13 @@ advertising sign maker
 road sign installer
 road sign maintenance worker",,released,2024-01-25T13:47:29.647Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
 http://data.europa.eu/esco/concept-scheme/member-occupations","Sign makers design and develop signs for a variety of uses such as flyers, traffic signs, billboards and business signs. They use different materials and techniques and if necessary they install the sign on site. Furthermore they also perform maintenance and repairs.",7316.4
-Occupation,http://data.europa.eu/esco/occupation/a1b86a8b-ad91-4192-b386-bbf89bb11699,5131,restaurant host/restaurant hostess,"maître d'hôtel
-restaurant host
+Occupation,http://data.europa.eu/esco/occupation/a1b86a8b-ad91-4192-b386-bbf89bb11699,5131,restcloudnt host/restcloudnt hostess,"maître d'hôtel
+restcloudnt host
 front of house hostess
-restaurant hostess
+restcloudnt hostess
 front of house host
 meeter and greeter",,released,2024-01-23T12:24:50.648Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
-http://data.europa.eu/esco/concept-scheme/occupations",Restaurant hosts/hostesses welcome customers to a hospitality service unit and provide initial services.,5131.1
+http://data.europa.eu/esco/concept-scheme/occupations",Restcloudnt hosts/hostesses welcome customers to a hospitality service unit and provide initial services.,5131.1
 Occupation,http://data.europa.eu/esco/occupation/a1ba7574-cc28-446c-9741-12d7fbb325cb,2422,labour market policy officer,"labour policy officer
 labor policy officer
 policy officer at labour group
@@ -24845,7 +24845,7 @@ kitchen assistant
 airline food kitchen worker
 airline food service worker
 catering worker",,released,2023-06-20T08:49:38.439Z,http://data.europa.eu/esco/regulated-professions/unregulated,Includes food service workers preparing food for flight and aviation companies.,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
-http://data.europa.eu/esco/concept-scheme/occupations","Food service workers prepare food and serve customers. They prepare simple dishes to be used in places that serve food, such as restaurants, cafeterias, hotels, hospitals and ensure that kitchen operations run smoothly and efficiently.",5246.1
+http://data.europa.eu/esco/concept-scheme/occupations","Food service workers prepare food and serve customers. They prepare simple dishes to be used in places that serve food, such as restcloudnts, cafeterias, hotels, hospitals and ensure that kitchen operations run smoothly and efficiently.",5246.1
 Occupation,http://data.europa.eu/esco/occupation/b4c6d1b0-929e-48be-9f67-47bd8c30658b,7121,roofer,"tinsmith
 house roofer
 roof slater
@@ -25602,18 +25602,18 @@ victim support worker
 victim care worker
 domestic violence counsellor",,released,2024-02-07T14:42:18.621Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
 http://data.europa.eu/esco/concept-scheme/occupations","Sexual violence counsellors provide support services, crisis care services and counselling to women and adolescents who have been directly or indirectly exposed to sexual assault and/or rape. They inform victims of the relevant legal procedures and protective services maintaining client confidentiality. They also address problematic sexualized behaviours of children.",2635.1.5
-Occupation,http://data.europa.eu/esco/occupation/b9de6d8b-1cf6-4722-bf8c-d73aad03bf87,5120,fish cook,"sea food restaurant cook
+Occupation,http://data.europa.eu/esco/occupation/b9de6d8b-1cf6-4722-bf8c-d73aad03bf87,5120,fish cook,"sea food restcloudnt cook
 sea food cook
 seafood cook
 fish station chef
-seafood restaurant cook
+seafood restcloudnt cook
 fish fryer
 fish chef
-fish restaurant chef
+fish restcloudnt chef
 fish section cook
 saucier
 fish frier
-fish restaurant cook
+fish restcloudnt cook
 fish section chef
 fish station cook
 poissonnier",,released,2024-01-25T09:34:39.653Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
@@ -29153,17 +29153,17 @@ wait staff
 waiter
 chef de rang",,released,2024-01-23T12:24:53.876Z,http://data.europa.eu/esco/regulated-professions/unregulated,"Excludes  <a resource=""http://data.europa.eu/esco/occupation/53ed8787-3423-4843-8c63-7be1877d29e2"" typeOf=""http://data.europa.eu/esco/model#Occupation"" href=""http://data.europa.eu/esco/occupation/53ed8787-3423-4843-8c63-7be1877d29e2""><span property=""http://www.w3.org/2000/01/rdf-schema#label"" xml:lang=""en"">head waiter/head waitress</span></a>.
  Excludes <a resource=""http://data.europa.eu/esco/occupation/2f5e38a0-6578-4665-bdbd-e2ab505be140"" typeOf=""http://data.europa.eu/esco/model#Occupation"" href=""http://data.europa.eu/esco/occupation/2f5e38a0-6578-4665-bdbd-e2ab505be140""><span property=""http://www.w3.org/2000/01/rdf-schema#label"" xml:lang=""en"">bartender</span></a>.",,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/member-occupations","Waiters/waitresses supply guests with food and drinks as requested. Waiters/waitresses usually work in restaurants, bars and hotels. This involves the preparation of tables, serving food or beverages and taking payments.",5131.2
-Occupation,http://data.europa.eu/esco/occupation/d5eb6150-bbff-4a9c-9d0c-21eab4dbe2b6,1412,restaurant manager,"bar manager
+http://data.europa.eu/esco/concept-scheme/member-occupations","Waiters/waitresses supply guests with food and drinks as requested. Waiters/waitresses usually work in restcloudnts, bars and hotels. This involves the preparation of tables, serving food or beverages and taking payments.",5131.2
+Occupation,http://data.europa.eu/esco/occupation/d5eb6150-bbff-4a9c-9d0c-21eab4dbe2b6,1412,restcloudnt manager,"bar manager
 beverage supervisor
-restaurant food and beverage manager
+restcloudnt food and beverage manager
 catering manager
 food and drinks manager
 cafe manager
 food and beverages manager
 F & B manager
 food & beverage supervisor",,released,2024-01-23T10:54:46.01Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/occupations,
-http://data.europa.eu/esco/concept-scheme/member-occupations",Restaurant managers are in charge of managing food and beverage operations in the kitchen and other food and beverage outlets or units in a hospitality establishment.,1412.1
+http://data.europa.eu/esco/concept-scheme/member-occupations",Restcloudnt managers are in charge of managing food and beverage operations in the kitchen and other food and beverage outlets or units in a hospitality establishment.,1412.1
 Occupation,http://data.europa.eu/esco/occupation/d63789ac-74b5-40e3-b890-685513c38e12,1111,governor,"state governor
 prefect
 regional governor
@@ -33712,7 +33712,7 @@ game critic
 architecture & design critic
 food critic
 TV critic",,released,2024-01-26T11:16:46.217Z,http://data.europa.eu/esco/regulated-professions/unregulated,,,"http://data.europa.eu/esco/concept-scheme/member-occupations,
-http://data.europa.eu/esco/concept-scheme/occupations","Critics write reviews of literary, musical and artistic works, restaurants, movies, television programs and other themes for newspapers, journals, magazines, radio, television and other media. They evaluate theme, expression and technique. Critics make judgements based on their personal experience and knowledge.",2642.1.7
+http://data.europa.eu/esco/concept-scheme/occupations","Critics write reviews of literary, musical and artistic works, restcloudnts, movies, television programs and other themes for newspapers, journals, magazines, radio, television and other media. They evaluate theme, expression and technique. Critics make judgements based on their personal experience and knowledge.",2642.1.7
 Occupation,http://data.europa.eu/esco/occupation/fddb7bd8-f176-4dc8-9d12-32b6072452c9,7411,electric meter technician,"electricity meter technician
 smart meter technician
 electricity meter installer
