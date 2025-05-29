@@ -97,6 +97,120 @@ class ESCOSemanticSearch:
             validation_details["errors"].append(error_msg)
             return False, validation_details
 
+    def _build_skill_query_string(self, query_embedding_list: List[float], limit: int, similarity_threshold: float, skill_fragment: str) -> str:
+        """Builds the GraphQL query string for Skill search."""
+        return f"""
+        {skill_fragment}
+        {{
+            Get {{
+                Skill(
+                    limit: {limit}
+                    nearVector: {{
+                        vector: {query_embedding_list}
+                        certainty: {similarity_threshold}
+                    }}
+                ) {{
+                    ...SkillFields
+                    _additional {{
+                        certainty
+                    }}
+                }}
+            }}
+        }}
+        """
+
+    def _build_occupation_query_string(self, query_embedding_list: List[float], limit: int, similarity_threshold: float, skill_fragment: str, occupation_fragment: str) -> str:
+        """Builds the GraphQL query string for Occupation search."""
+        return f"""
+        {skill_fragment}
+        {occupation_fragment}
+        {{
+            Get {{
+                Occupation(
+                    limit: {limit}
+                    nearVector: {{
+                        vector: {query_embedding_list}
+                        certainty: {similarity_threshold}
+                    }}
+                ) {{
+                    ...OccupationFields
+                    _additional {{
+                        certainty
+                    }}
+                }}
+            }}
+        }}
+        """
+
+    def _execute_query(self, query_string: str, node_type_for_error_logging: str) -> Optional[List[Dict]]:
+        """Executes a GraphQL query and returns the results, handling basic errors."""
+        try:
+            logger.info(f"Executing {node_type_for_error_logging} query...")
+            # Log the actual query for debugging
+            logger.info(f"GraphQL query: {query_string[:500]}...")  # First 500 chars
+            
+            # client.query.raw() executes the GraphQL query string directly.
+            result = self.client.client.query.raw(query_string)
+            
+            logger.info(f"Raw query result keys: {result.keys() if result else 'None'}")
+            
+            if not result or "data" not in result or "Get" not in result["data"] or node_type_for_error_logging not in result["data"]["Get"]:
+                logger.error(f"Invalid Weaviate response for {node_type_for_error_logging} search: {result}")
+                return None # Indicate error or empty result to caller
+            
+            query_results = result["data"]["Get"][node_type_for_error_logging]
+            logger.info(f"Query returned {len(query_results)} {node_type_for_error_logging} results")
+            
+            return query_results
+        except AttributeError as e:
+            # This block catches AttributeErrors if parts of the client.query.raw chain are missing.
+            logger.error(f"Error executing Weaviate query for {node_type_for_error_logging}: {e}. This might indicate an issue with the Weaviate client structure.")
+            raise # Re-raise the exception to be handled by the caller or to stop execution
+        except Exception as e:
+            logger.error(f"Unexpected error during Weaviate query for {node_type_for_error_logging}: {str(e)}")
+            return None # Indicate error to caller
+
+    def _process_search_results(self, raw_results: List[Dict], node_type: str) -> List[Dict]:
+        """Processes raw search results into the final format."""
+        search_results = []
+        for record in raw_results:
+            result_dict = {
+                "uri": record["conceptUri"],
+                "label": record["preferredLabel_en"],
+                "description": record.get("description_en", ""),
+                "type": record.get("type", node_type), # Ensure 'type' is present
+                "score": record["_additional"]["certainty"]
+            }
+            
+            # Add additional fields based on node type
+            current_record_type = record.get("type", node_type)
+            if current_record_type == "Skill":
+                result_dict.update({
+                    "skillType": record.get("skillType"),
+                    "broaderSkills": self._process_broader_skills(record.get("broaderSkill", [])),
+                    "skillCollections": [
+                        {"uri": c["conceptUri"], "label": c["preferredLabel_en"]}
+                        for c in record.get("memberOfSkillCollection", [])
+                    ],
+                    "relatedSkills": [
+                        {
+                            "uri": s["conceptUri"],
+                            "label": s["preferredLabel_en"]
+                        }
+                        for s in record.get("hasRelatedSkill", [])
+                    ]
+                })
+            elif current_record_type == "Occupation":
+                result_dict.update({
+                    "code": record.get("code"),
+                    "broaderOccupations": self._process_broader_occupations(record.get("broaderOccupation", [])),
+                    "essentialSkills": self._process_skills(record.get("hasEssentialSkill", [])),
+                    "optionalSkills": self._process_skills(record.get("hasOptionalSkill", []))
+                })
+            
+            search_results.append(result_dict)
+        return search_results
+
     def search(self, query_text: str, node_type: str = "Skill", limit: int = 10, 
                search_only: bool = False, similarity_threshold: float = 0.5) -> List[Dict]:
         """Search for semantically similar nodes
@@ -122,79 +236,200 @@ class ESCOSemanticSearch:
             logger.error("Failed to generate embedding for query text")
             return []
         
+        query_embedding_list = query_embedding.tolist()
+        logger.debug(f"Generated embedding with {len(query_embedding_list)} dimensions for query: '{query_text}'")
+        
         try:
+            # First try with a very simple query to ensure basic connectivity works
+            simple_test_query = f"""
+            {{
+                Get {{
+                    {node_type}(limit: 1) {{
+                        conceptUri
+                        preferredLabel_en
+                    }}
+                }}
+            }}
+            """
+            logger.info("Testing basic connectivity with simple query...")
+            test_result = self._execute_query(simple_test_query, node_type)
+            if test_result is None:
+                logger.error("Basic connectivity test failed")
+                return []
+            logger.info(f"Basic connectivity test passed, found {len(test_result)} items")
+            
             if node_type == "Skill":
-                result = (
-                    self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_near_vector({
-                        "vector": query_embedding,
-                        "certainty": similarity_threshold
-                    })
-                    .with_limit(limit)
-                    .with_additional(["certainty"])
-                    .do()
-                )
-                if not result or "data" not in result:
-                    logger.error(f"Invalid Weaviate response for Skill search: {result}")
-                    return []
-                results = result["data"]["Get"]["Skill"]
+                query = f"""
+                {{
+                    Get {{
+                        Skill(
+                            limit: {limit}
+                            nearVector: {{
+                                vector: {query_embedding_list}
+                                certainty: {similarity_threshold}
+                            }}
+                        ) {{
+                            conceptUri
+                            preferredLabel_en
+                            description_en
+                            skillType
+                            broaderSkill {{
+                                ... on Skill {{
+                                    conceptUri
+                                    preferredLabel_en
+                                }}
+                            }}
+                            memberOfSkillCollection {{
+                                ... on SkillCollection {{
+                                    conceptUri
+                                    preferredLabel_en
+                                }}
+                            }}
+                            hasRelatedSkill {{
+                                ... on Skill {{
+                                    conceptUri
+                                    preferredLabel_en
+                                }}
+                            }}
+                            _additional {{
+                                certainty
+                            }}
+                        }}
+                    }}
+                }}
+                """
+                logger.debug(f"Executing Skill query with similarity threshold {similarity_threshold}")
+                result = self._execute_query(query, "Skill")
+                if not result:
+                    logger.warning(f"No results returned from Skill query with threshold {similarity_threshold}, trying with lower threshold")
+                    # Try with a much lower threshold as fallback
+                    fallback_query = query.replace(str(similarity_threshold), "0.1")
+                    result = self._execute_query(fallback_query, "Skill")
+                    if not result:
+                        logger.warning("No results even with fallback threshold")
+                        return []
+                logger.debug(f"Found {len(result)} skill results")
+                results = result
+                
             elif node_type == "Occupation":
-                result = (
-                    self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_near_vector({
-                        "vector": query_embedding,
-                        "certainty": similarity_threshold
-                    })
-                    .with_limit(limit)
-                    .with_additional(["certainty"])
-                    .do()
-                )
-                if not result or "data" not in result:
-                    logger.error(f"Invalid Weaviate response for Occupation search: {result}")
-                    return []
-                results = result["data"]["Get"]["Occupation"]
+                query = f"""
+                {{
+                    Get {{
+                        Occupation(
+                            limit: {limit}
+                            nearVector: {{
+                                vector: {query_embedding_list}
+                                certainty: {similarity_threshold}
+                            }}
+                        ) {{
+                            conceptUri
+                            preferredLabel_en
+                            description_en
+                            code
+                            broaderOccupation {{
+                                ... on Occupation {{
+                                    conceptUri
+                                    preferredLabel_en
+                                    code
+                                }}
+                            }}
+                            hasEssentialSkill {{
+                                ... on Skill {{
+                                    conceptUri
+                                    preferredLabel_en
+                                    skillType
+                                }}
+                            }}
+                            hasOptionalSkill {{
+                                ... on Skill {{
+                                    conceptUri
+                                    preferredLabel_en
+                                    skillType
+                                }}
+                            }}
+                            _additional {{
+                                certainty
+                            }}
+                        }}
+                    }}
+                }}
+                """
+                logger.debug(f"Executing Occupation query with similarity threshold {similarity_threshold}")
+                result = self._execute_query(query, "Occupation")
+                if not result:
+                    logger.warning(f"No results returned from Occupation query with threshold {similarity_threshold}, trying with lower threshold")
+                    # Try with a much lower threshold as fallback
+                    fallback_query = query.replace(str(similarity_threshold), "0.1")
+                    result = self._execute_query(fallback_query, "Occupation")
+                    if not result:
+                        logger.warning("No results even with fallback threshold")
+                        return []
+                logger.debug(f"Found {len(result)} occupation results")
+                results = result
+                
             else:
                 # Search both skills and occupations
-                skill_result = (
-                    self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_near_vector({
-                        "vector": query_embedding,
-                        "certainty": similarity_threshold
-                    })
-                    .with_limit(limit)
-                    .with_additional(["certainty"])
-                    .do()
-                )
+                skill_query = f"""
+                {{
+                    Get {{
+                        Skill(
+                            limit: {limit}
+                            nearVector: {{
+                                vector: {query_embedding_list}
+                                certainty: {similarity_threshold}
+                            }}
+                        ) {{
+                            conceptUri
+                            preferredLabel_en
+                            description_en
+                            skillType
+                            _additional {{
+                                certainty
+                            }}
+                        }}
+                    }}
+                }}
+                """
                 
-                occupation_result = (
-                    self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_near_vector({
-                        "vector": query_embedding,
-                        "certainty": similarity_threshold
-                    })
-                    .with_limit(limit)
-                    .with_additional(["certainty"])
-                    .do()
-                )
+                occupation_query = f"""
+                {{
+                    Get {{
+                        Occupation(
+                            limit: {limit}
+                            nearVector: {{
+                                vector: {query_embedding_list}
+                                certainty: {similarity_threshold}
+                            }}
+                        ) {{
+                            conceptUri
+                            preferredLabel_en
+                            description_en
+                            code
+                            _additional {{
+                                certainty
+                            }}
+                        }}
+                    }}
+                }}
+                """
                 
-                if not skill_result or "data" not in skill_result:
-                    logger.error(f"Invalid Weaviate response for Skill search: {skill_result}")
-                    skill_result = {"data": {"Get": {"Skill": []}}}
+                skill_result = self._execute_query(skill_query, "Skill")
+                occupation_result = self._execute_query(occupation_query, "Occupation")
                 
-                if not occupation_result or "data" not in occupation_result:
-                    logger.error(f"Invalid Weaviate response for Occupation search: {occupation_result}")
-                    occupation_result = {"data": {"Get": {"Occupation": []}}}
+                # Handle cases where a query might fail or return no results
+                skills = skill_result if skill_result is not None else []
+                occupations = occupation_result if occupation_result is not None else []
+
+                if not skills and not occupations:
+                    logger.info("No results found for either Skills or Occupations in combined search.")
+                    return []
                 
                 # Combine and sort results
                 results = []
-                for item in skill_result["data"]["Get"]["Skill"]:
+                for item in skills:
                     item["type"] = "Skill"
                     results.append(item)
-                for item in occupation_result["data"]["Get"]["Occupation"]:
+                for item in occupations:
                     item["type"] = "Occupation"
                     results.append(item)
                 
@@ -203,21 +438,59 @@ class ESCOSemanticSearch:
                 results = results[:limit]
             
             # Process results
-            search_results = []
-            for record in results:
-                search_results.append({
-                    "uri": record["conceptUri"],
-                    "label": record["preferredLabel_en"],
-                    "description": record.get("description_en", ""),
-                    "type": record.get("type", node_type),
-                    "score": record["_additional"]["certainty"]
-                })
-            
-            return search_results
+            return self._process_search_results(results, node_type)
             
         except Exception as e:
             logger.error(f"Error during semantic search: {str(e)}")
             return []
+
+    def _process_broader_skills(self, broader_skills):
+        """Helper method to process broader skills hierarchy"""
+        if not broader_skills:
+            return []
+        
+        result = []
+        for skill in broader_skills:
+            skill_dict = {
+                "uri": skill["conceptUri"],
+                "label": skill["preferredLabel_en"]
+            }
+            if "broaderSkill" in skill:
+                skill_dict["broaderSkills"] = self._process_broader_skills(skill["broaderSkill"])
+            result.append(skill_dict)
+        return result
+
+    def _process_broader_occupations(self, broader_occupations):
+        """Helper method to process broader occupations hierarchy"""
+        if not broader_occupations:
+            return []
+        
+        result = []
+        for occupation in broader_occupations:
+            occupation_dict = {
+                "uri": occupation["conceptUri"],
+                "label": occupation["preferredLabel_en"],
+                "code": occupation.get("code")
+            }
+            if "broaderOccupation" in occupation:
+                occupation_dict["broaderOccupations"] = self._process_broader_occupations(occupation["broaderOccupation"])
+            result.append(occupation_dict)
+        return result
+
+    def _process_skills(self, skills):
+        """Helper method to process skills with their hierarchies and collections"""
+        if not skills:
+            return []
+        
+        result = []
+        for skill in skills:
+            skill_dict = {
+                "uri": skill["conceptUri"],
+                "label": skill["preferredLabel_en"],
+                "skillType": skill.get("skillType")
+            }
+            result.append(skill_dict)
+        return result
 
     def get_related_graph(self, uri: str, node_type: str = "Skill") -> Optional[Dict]:
         """Get related graph for a node"""

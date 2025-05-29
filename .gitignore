@@ -47,3 +47,4 @@ neo4j_plugins/
 .DS_Store
 Thumbs.db
 model_cache/
+docs/

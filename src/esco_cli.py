@@ -69,6 +69,46 @@ def print_result(result, index=None):
         if len(desc) > 100:
             desc = desc[:97] + "..."
         print(f"   {colorize('Description:', Colors.BOLD)} {desc}")
+    
+    # Print additional fields based on type
+    if result['type'] == 'Skill':
+        if result.get('skillType'):
+            print(f"   {colorize('Skill Type:', Colors.BOLD)} {result['skillType']}")
+        
+        if result.get('broaderSkills'):
+            print(f"   {colorize('Broader Skills:', Colors.BOLD)}")
+            for skill in result['broaderSkills']:
+                print(f"     • {skill['label']}")
+        
+        if result.get('skillCollections'):
+            print(f"   {colorize('Skill Collections:', Colors.BOLD)}")
+            for collection in result['skillCollections']:
+                print(f"     • {collection['label']}")
+        
+        if result.get('relatedSkills'):
+            print(f"   {colorize('Related Skills:', Colors.BOLD)}")
+            for skill in result['relatedSkills']:
+                rel_type = f" ({skill['relationType']})" if skill.get('relationType') else ""
+                print(f"     • {skill['label']}{rel_type}")
+    
+    elif result['type'] == 'Occupation':
+        if result.get('iscoCode'):
+            print(f"   {colorize('ISCO Code:', Colors.BOLD)} {result['iscoCode']}")
+        
+        if result.get('broaderOccupations'):
+            print(f"   {colorize('Broader Occupations:', Colors.BOLD)}")
+            for occ in result['broaderOccupations']:
+                print(f"     • {occ['label']}")
+        
+        if result.get('essentialSkills'):
+            print(f"   {colorize('Essential Skills:', Colors.BOLD)}")
+            for skill in result['essentialSkills']:
+                print(f"     • {skill['label']}")
+        
+        if result.get('optionalSkills'):
+            print(f"   {colorize('Optional Skills:', Colors.BOLD)}")
+            for skill in result['optionalSkills']:
+                print(f"     • {skill['label']}")
 
 def print_related_nodes(related_graph):
     """Print related nodes in a structured format"""
@@ -78,22 +118,48 @@ def print_related_nodes(related_graph):
     node = related_graph['node']
     print_section(f"Related entities for '{node['label']}'")
     
-    for rel_type, rel_nodes in related_graph['related'].items():
-        if not rel_nodes:
-            continue
-            
-        # Format the relationship type
-        rel_type_display = rel_type.replace('_', ' ').title()
-        count = len(rel_nodes)
-        print(f"\n{colorize(rel_type_display, Colors.BOLD)} ({count}):")
-        
-        # Print first 5 nodes
-        for node in rel_nodes[:5]:
-            print(f"  • {node['label']}")
-        
-        # Indicate if there are more
-        if count > 5:
-            print(f"  ... and {count - 5} more")
+    # Print ISCO information if available
+    if node.get('iscoCode'):
+        print(f"\n{colorize('ISCO Code:', Colors.BOLD)} {node['iscoCode']}")
+    
+    # Print broader occupations if available
+    if node.get('broaderOccupations'):
+        print(f"\n{colorize('Broader Occupations:', Colors.BOLD)}")
+        for occ in node['broaderOccupations']:
+            print(f"  • {occ['label']}")
+            if occ.get('broaderOccupations'):
+                for sub_occ in occ['broaderOccupations']:
+                    print(f"    - {sub_occ['label']}")
+    
+    # Print skills information
+    if node.get('essentialSkills'):
+        print(f"\n{colorize('Essential Skills:', Colors.BOLD)}")
+        for skill in node['essentialSkills']:
+            print(f"  • {skill['label']}")
+            if skill.get('broaderSkills'):
+                for broader in skill['broaderSkills']:
+                    print(f"    - {broader['label']}")
+    
+    if node.get('optionalSkills'):
+        print(f"\n{colorize('Optional Skills:', Colors.BOLD)}")
+        for skill in node['optionalSkills']:
+            print(f"  • {skill['label']}")
+            if skill.get('broaderSkills'):
+                for broader in skill['broaderSkills']:
+                    print(f"    - {broader['label']}")
+    
+    # Print skill collections if available
+    if node.get('skillCollections'):
+        print(f"\n{colorize('Skill Collections:', Colors.BOLD)}")
+        for collection in node['skillCollections']:
+            print(f"  • {collection['label']}")
+    
+    # Print related skills if available
+    if node.get('relatedSkills'):
+        print(f"\n{colorize('Related Skills:', Colors.BOLD)}")
+        for skill in node['relatedSkills']:
+            rel_type = f" ({skill['relationType']})" if skill.get('relationType') else ""
+            print(f"  • {skill['label']}{rel_type}")
 
 def format_json_output(data):
     """Format JSON output with consistent indentation"""
@@ -432,25 +498,61 @@ def search(query: str, limit: int, certainty: float, config: str, profile: str, 
         engine = ESCOSemanticSearch(config, profile)
         
         # Perform search
-        if profile_search and type == 'Occupation':
+        if profile_search:
+            if type != 'Occupation':
+                click.echo(click.style("\nWarning: Profile search is only available for Occupation type. Switching to Occupation type.", fg='yellow'))
+                type = 'Occupation'
+            
             results = engine.semantic_search_with_profile(
                 query=query,
                 limit=limit,
-                certainty=certainty
+                similarity_threshold=certainty
             )
+            
+            if not results:
+                click.echo(click.style("\nNo results found.", fg='yellow'))
+                return
+            
+            if json:
+                click.echo(json.dumps({
+                    "query": query,
+                    "parameters": {
+                        "limit": limit,
+                        "similarity_threshold": certainty
+                    },
+                    "results": results
+                }, indent=2))
+            else:
+                click.echo("\nSearch Results with Profiles:")
+                for i, result in enumerate(results, 1):
+                    print_result(result['search_result'], i)
+                    print_related_nodes(result['profile'])
         else:
             results = engine.search(
                 query=query,
-                type=type,
+                node_type=type,
                 limit=limit,
-                certainty=certainty
+                similarity_threshold=certainty
             )
-        
-        # Output results
-        if json:
-            click.echo(json.dumps(results, indent=2))
-        else:
-            click.echo(engine.format_results(results))
+            
+            if not results:
+                click.echo(click.style("\nNo results found.", fg='yellow'))
+                return
+            
+            if json:
+                click.echo(json.dumps({
+                    "query": query,
+                    "parameters": {
+                        "type": type,
+                        "limit": limit,
+                        "similarity_threshold": certainty
+                    },
+                    "results": results
+                }, indent=2))
+            else:
+                click.echo("\nSearch Results:")
+                for i, result in enumerate(results, 1):
+                    print_result(result, i)
             
     except Exception as e:
         logger.error(f"Search failed: {str(e)}")
