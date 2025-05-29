@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import argparse
 import logging
 import os
 import yaml
@@ -199,224 +198,6 @@ def load_config(config_path=None, profile='default'):
     
     return config
 
-def setup_logging(level=logging.INFO):
-    """Setup logging configuration for all modules"""
-    # Create logs directory if it doesn't exist
-    os.makedirs('logs', exist_ok=True)
-    
-    # Configure logging format
-    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    
-    # Configure root logger
-    logging.basicConfig(
-        level=level,
-        format=log_format,
-        handlers=[
-            logging.StreamHandler(),  # Console handler
-            logging.FileHandler('logs/esco.log')  # File handler
-        ]
-    )
-    
-    # Set specific logger levels
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('tqdm').setLevel(logging.WARNING)
-    logging.getLogger('sentence_transformers').setLevel(logging.WARNING)
-    logging.getLogger('transformers').setLevel(logging.WARNING)
-    
-    # Disable tqdm progress bars for specific modules
-    import tqdm
-    tqdm.tqdm.monitor_interval = 0
-    
-    return logging.getLogger(__name__)
-
-def main():
-    parser = argparse.ArgumentParser(
-        description='ESCO Data Management and Search CLI',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Download translation model
-  python esco_cli.py download-model
-
-  # Ingest ESCO data
-  python esco_cli.py ingest --config config/weaviate_config.yaml
-
-  # Search for skills
-  python esco_cli.py search --query "python programming" --type Skill
-
-  # Translate nodes
-  python esco_cli.py translate --type Skill --property prefLabel
-
-  # Get help for a specific command
-  python esco_cli.py search --help
-        """
-    )
-
-    # Common parameters
-    common_parser = argparse.ArgumentParser(add_help=False)
-    common_parser.add_argument('--config', type=str, help='Path to YAML config file')
-    common_parser.add_argument('--profile', type=str, default='default',
-                             help='Configuration profile to use')
-    common_parser.add_argument('--quiet', action='store_true',
-                             help='Reduce output verbosity')
-
-    # Create subparsers for different commands
-    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
-
-    # Download model command
-    download_parser = subparsers.add_parser('download-model', help='Download translation model')
-
-    # Ingest command
-    ingest_parser = subparsers.add_parser('ingest', parents=[common_parser], help='Ingest ESCO data')
-    ingest_parser.add_argument('--embeddings-only', action='store_true', help='Only generate embeddings')
-    ingest_parser.add_argument('--delete-all', action='store_true', help='Delete all data before ingestion')
-    ingest_parser.add_argument('--classes', nargs='+', choices=['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection'],
-                             help='Specific classes to ingest')
-    ingest_parser.add_argument('--skip-relations', action='store_true',
-                             help='Skip creating relationships between entities')
-
-    # Search command
-    search_parser = subparsers.add_parser('search', parents=[common_parser], help='Search ESCO data')
-    search_parser.add_argument('--query', type=str, required=True, help='Text query for semantic search')
-    search_parser.add_argument('--type', type=str, default='Skill',
-                             choices=['Skill', 'Occupation', 'ISCOGroup', 'SkillCollection', 'All'],
-                             help='Type of nodes to search')
-    search_parser.add_argument('--limit', type=int, default=10, help='Maximum number of results')
-    search_parser.add_argument('--threshold', type=float, default=0.5,
-                             help='Minimum similarity threshold (0.0 to 1.0)')
-    search_parser.add_argument('--profile-search', action='store_true',
-                             help='Include complete occupation profiles in results')
-    search_parser.add_argument('--json', action='store_true', help='Output results in JSON format')
-
-    args = parser.parse_args()
-
-    if not args.command:
-        parser.print_help()
-        return
-
-    try:
-        if args.command == 'download-model':
-            print_header("Downloading Translation Model")
-            download_model()
-            print(colorize("\n✓ Model downloaded successfully", Colors.GREEN))
-            return
-
-        # For commands that need configuration
-        if args.command in ['ingest', 'search', 'translate']:
-            # Load config
-            config = load_config(args.config, args.profile)
-            
-            if args.command == 'ingest':
-                print_header("ESCO Data Ingestion")
-                ingestor = create_ingestor(args.config, args.profile)
-                
-                if args.delete_all:
-                    print_section("Deleting Existing Data")
-                    ingestor.delete_all_data()
-                    print(colorize("✓ All data deleted", Colors.GREEN))
-                
-                print_section("Starting Ingestion")
-                
-                # Determine which classes to ingest
-                classes_to_ingest = args.classes if args.classes else ['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']
-                
-                if args.embeddings_only:
-                    print("Generating embeddings only...")
-                    ingestor.run_embeddings_only()
-                else:
-                    print("Running ingestion for classes:", ", ".join(classes_to_ingest))
-                    if args.skip_relations:
-                        print("Skipping relationship creation")
-                    
-                    # Run ingestion for each selected class
-                    for class_name in classes_to_ingest:
-                        print_section(f"Ingesting {class_name}")
-                        if class_name == 'Occupation':
-                            ingestor.ingest_occupations()
-                        elif class_name == 'Skill':
-                            ingestor.ingest_skills()
-                        elif class_name == 'ISCOGroup':
-                            ingestor.ingest_isco_groups()
-                        elif class_name == 'SkillCollection':
-                            ingestor.ingest_skill_collections()
-                    
-                    # Create relationships if not skipped
-                    if not args.skip_relations:
-                        print_section("Creating Relationships")
-                        ingestor.create_skill_relations()
-                        ingestor.create_hierarchical_relations()
-                        ingestor.create_isco_group_relations()
-                        ingestor.create_skill_collection_relations()
-                
-                ingestor.close()
-                print(colorize("\n✓ Ingestion completed successfully", Colors.GREEN))
-
-            elif args.command == 'search':
-                print_header("ESCO Semantic Search")
-                print(f"Query: {colorize(args.query, Colors.BOLD)}")
-                print(f"Type: {colorize(args.type, Colors.BOLD)}")
-                print(f"Threshold: {colorize(str(args.threshold), Colors.BOLD)}")
-                
-                search_engine = ESCOSemanticSearch(args.config, args.profile)
-                
-                print_section("Searching...")
-                
-                if args.profile_search:
-                    if args.type != "Occupation":
-                        print(colorize("\nWarning: Profile search is only available for Occupation type. Switching to Occupation type.", Colors.YELLOW))
-                        args.type = "Occupation"
-                    
-                    results = search_engine.semantic_search_with_profile(
-                        args.query,
-                        args.limit,
-                        args.threshold
-                    )
-                    
-                    if not results:
-                        print(colorize("\nNo results found.", Colors.YELLOW))
-                        return
-                    
-                    print_section("Search Results with Profiles")
-                    for i, result in enumerate(results, 1):
-                        search_result = result['search_result']
-                        print_result(search_result, i)
-                        print_related_nodes(result['profile'])
-                    
-                    if args.json:
-                        print("\n" + format_json_output({
-                            "query": args.query,
-                            "parameters": {
-                                "limit": args.limit,
-                                "similarity_threshold": args.threshold
-                            },
-                            "results": results
-                        }))
-                else:
-                    results = search_engine.search(
-                        args.query, 
-                        args.type, 
-                        args.limit, 
-                        args.threshold
-                    )
-
-                    if not results:
-                        print(colorize("\nNo results found.", Colors.YELLOW))
-                        return
-
-                    print_section("Search Results")
-                    for i, result in enumerate(results, 1):
-                        print_result(result, i)
-
-                    if args.json:
-                        print("\n" + format_json_output({
-                            "query": args.query,
-                            "results": results
-                        }))
-
-    except Exception as e:
-        print(colorize(f"\nError: {str(e)}", Colors.RED))
-        raise
-
 @click.group()
 def cli():
     """ESCO Data Management and Search Tool"""
@@ -434,28 +215,32 @@ def cli():
 def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, classes: tuple, skip_relations: bool, force_reingest: bool):
     """Ingest ESCO data into Weaviate."""
     try:
+        print_header("ESCO Data Ingestion")
+        
         # Create ingestor instance
         ingestor = create_ingestor(config, profile)
         
         if delete_all:
-            click.echo("Deleting all existing data...")
+            print_section("Deleting Existing Data")
             ingestor.delete_all_data()
+            print(colorize("✓ All data deleted", Colors.GREEN))
         
         # Determine which classes to ingest
         classes_to_ingest = list(classes) if classes else ['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']
         
         # Run appropriate process
         if embeddings_only:
-            click.echo("Running embeddings-only mode...")
+            print_section("Generating Embeddings")
             ingestor.run_embeddings_only()
         else:
-            click.echo(f"Running ingestion for classes: {', '.join(classes_to_ingest)}")
+            print_section("Starting Ingestion")
+            print(f"Running ingestion for classes: {', '.join(classes_to_ingest)}")
             if skip_relations:
-                click.echo("Skipping relationship creation")
+                print("Skipping relationship creation")
             
             # Run ingestion for each selected class
             for class_name in classes_to_ingest:
-                click.echo(f"\nIngesting {class_name}...")
+                print_section(f"Ingesting {class_name}")
                 if class_name == 'Occupation':
                     ingestor.ingest_occupations()
                 elif class_name == 'Skill':
@@ -467,13 +252,13 @@ def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, c
             
             # Create relationships if not skipped
             if not skip_relations:
-                click.echo("\nCreating relationships...")
+                print_section("Creating Relationships")
                 ingestor.create_skill_relations()
                 ingestor.create_hierarchical_relations()
                 ingestor.create_isco_group_relations()
                 ingestor.create_skill_collection_relations()
         
-        click.echo("Ingestion completed successfully!")
+        print(colorize("\n✓ Ingestion completed successfully", Colors.GREEN))
         
     except Exception as e:
         logger.error(f"Ingestion failed: {str(e)}")
@@ -494,13 +279,18 @@ def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, c
 def search(query: str, limit: int, certainty: float, config: str, profile: str, type: str, json: bool, profile_search: bool):
     """Search ESCO data using Weaviate."""
     try:
+        print_header("ESCO Semantic Search")
+        print(f"Query: {colorize(query, Colors.BOLD)}")
+        print(f"Type: {colorize(type, Colors.BOLD)}")
+        print(f"Threshold: {colorize(str(certainty), Colors.BOLD)}")
+        
         # Initialize search engine
         engine = ESCOSemanticSearch(config, profile)
         
         # Perform search
         if profile_search:
             if type != 'Occupation':
-                click.echo(click.style("\nWarning: Profile search is only available for Occupation type. Switching to Occupation type.", fg='yellow'))
+                print(colorize("\nWarning: Profile search is only available for Occupation type. Switching to Occupation type.", Colors.YELLOW))
                 type = 'Occupation'
             
             results = engine.semantic_search_with_profile(
@@ -510,20 +300,20 @@ def search(query: str, limit: int, certainty: float, config: str, profile: str, 
             )
             
             if not results:
-                click.echo(click.style("\nNo results found.", fg='yellow'))
+                print(colorize("\nNo results found.", Colors.YELLOW))
                 return
             
             if json:
-                click.echo(json.dumps({
+                print("\n" + format_json_output({
                     "query": query,
                     "parameters": {
                         "limit": limit,
                         "similarity_threshold": certainty
                     },
                     "results": results
-                }, indent=2))
+                }))
             else:
-                click.echo("\nSearch Results with Profiles:")
+                print_section("Search Results with Profiles")
                 for i, result in enumerate(results, 1):
                     print_result(result['search_result'], i)
                     print_related_nodes(result['profile'])
@@ -536,11 +326,11 @@ def search(query: str, limit: int, certainty: float, config: str, profile: str, 
             )
             
             if not results:
-                click.echo(click.style("\nNo results found.", fg='yellow'))
+                print(colorize("\nNo results found.", Colors.YELLOW))
                 return
             
             if json:
-                click.echo(json.dumps({
+                print("\n" + format_json_output({
                     "query": query,
                     "parameters": {
                         "type": type,
@@ -548,9 +338,9 @@ def search(query: str, limit: int, certainty: float, config: str, profile: str, 
                         "similarity_threshold": certainty
                     },
                     "results": results
-                }, indent=2))
+                }))
             else:
-                click.echo("\nSearch Results:")
+                print_section("Search Results")
                 for i, result in enumerate(results, 1):
                     print_result(result, i)
             
@@ -558,5 +348,16 @@ def search(query: str, limit: int, certainty: float, config: str, profile: str, 
         logger.error(f"Search failed: {str(e)}")
         raise click.ClickException(str(e))
 
+@cli.command()
+def download_model():
+    """Download translation model."""
+    try:
+        print_header("Downloading Translation Model")
+        download_model()
+        print(colorize("\n✓ Model downloaded successfully", Colors.GREEN))
+    except Exception as e:
+        logger.error(f"Model download failed: {str(e)}")
+        raise click.ClickException(str(e))
+
 if __name__ == "__main__":
-    main() 
+    cli() 

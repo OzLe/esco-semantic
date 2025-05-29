@@ -17,33 +17,20 @@ import json
 from datetime import datetime
 from src.weaviate_client import WeaviateClient
 from transformers import MarianMTModel, MarianTokenizer, AutoTokenizer, AutoModelForSeq2SeqLM
-from src.logging_config import setup_logging
+from src.logging_config import setup_logging, log_error
+from pathlib import Path
+from .exceptions import TranslationError, ModelError
 
 # Setup logging
 logger = setup_logging()
 
 def verify_dependencies():
     """Verify that all required dependencies are installed."""
-    required_packages = {
-        'tiktoken': '>=0.6.0',
-        'sentencepiece': '>=0.1.99',
-        'google.protobuf': '<4',
-        'transformers': '>=4.49.1'
-    }
-    
-    missing_packages = []
-    for package, version in required_packages.items():
-        try:
-            importlib.import_module(package)
-        except ImportError:
-            missing_packages.append(f"{package}{version}")
-    
-    if missing_packages:
-        raise ImportError(
-            f"Missing required packages: {', '.join(missing_packages)}\n"
-            "Please install them using:\n"
-            f"pip install {' '.join(missing_packages)}"
-        )
+    try:
+        import transformers
+        import torch
+    except ImportError as e:
+        raise ModelError(f"Missing required dependency: {str(e)}")
 
 def get_device():
     """Get the best available device for PyTorch operations."""
@@ -70,14 +57,10 @@ class ESCOTranslator:
         
         # Determine device
         if device is None:
-            self.device = get_device()
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
-            if device == "mps" and not torch.backends.mps.is_available():
-                logger.warning("MPS requested but not available, falling back to CPU")
-                self.device = "cpu"
-            else:
-                self.device = device
-            
+            self.device = torch.device(device)
+        
         logger.info(f"Using device: {self.device}")
         
         # Clear any existing CUDA cache
@@ -126,77 +109,24 @@ class ESCOTranslator:
                     local_files_only=True
                 )
             except Exception as e:
-                logger.error(f"Failed to load tokenizer from cache: {str(e)}")
-                raise RuntimeError(
+                log_error(logger, e, {'operation': 'load_tokenizer'})
+                raise ModelError(
                     "Failed to load tokenizer from cache. "
                     "Please run 'python src/download_model.py' to download the model."
                 )
             
             logger.info("Loading model from local cache...")
-            # For MPS devices, we need to be more careful with model loading
-            if self.device == "mps":
-                try:
-                    # Clear any existing caches
-                    torch.cuda.empty_cache()
-                    if torch.backends.mps.is_available():
-                        torch.mps.empty_cache()
-                    
-                    # Load model on CPU first with explicit settings
-                    logger.info("Loading model on CPU first...")
-                    self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                        self.model_dir,
-                        torch_dtype=torch.float32,
-                        low_cpu_mem_usage=True,
-                        local_files_only=True,
-                        device_map="cpu"
-                    )
-                    
-                    # Ensure model is in eval mode
-                    self.model.eval()
-                    
-                    # Move to MPS after loading
-                    logger.info("Moving model to MPS...")
-                    self.model = self.model.to(self.device)
-                    
-                    # Run a small test to verify MPS compatibility
-                    logger.info("Testing model on MPS...")
-                    test_input = self.tokenizer("Hello", return_tensors="pt").to(self.device)
-                    with torch.no_grad():
-                        _ = self.model.generate(**test_input, max_length=10)
-                    logger.info("MPS test successful")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to load model on MPS: {str(e)}")
-                    logger.info("Falling back to CPU...")
-                    self.device = "cpu"
-                    # Clear memory before retrying on CPU
-                    gc.collect()
-                    if torch.backends.mps.is_available():
-                        torch.mps.empty_cache()
-                    
-                    self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                        self.model_dir,
-                        torch_dtype=torch.float32,
-                        low_cpu_mem_usage=True,
-                        local_files_only=True,
-                        device_map="cpu"
-                    )
-            else:
-                try:
-                    # For other devices, load directly to device
-                    self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                        self.model_dir,
-                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                        low_cpu_mem_usage=True,
-                        device_map=self.device,
-                        local_files_only=True
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to load model from cache: {str(e)}")
-                    raise RuntimeError(
-                        "Failed to load model from cache. "
-                        "Please run 'python src/download_model.py' to download the model."
-                    )
+            try:
+                self.model = AutoModelForSeq2SeqLM.from_pretrained(
+                    self.model_dir,
+                    local_files_only=True
+                ).to(self.device)
+            except Exception as e:
+                log_error(logger, e, {'operation': 'load_model'})
+                raise ModelError(
+                    "Failed to load model from cache. "
+                    "Please run 'python src/download_model.py' to download the model."
+                )
             
             # Set model to evaluation mode
             self.model.eval()
@@ -210,20 +140,8 @@ class ESCOTranslator:
             logger.info(f"Smoke test successful. Translated: {test_output}")
             
         except Exception as e:
-            logger.error(f"Failed to initialize model: {str(e)}")
-            # Clean up any partial initialization
-            if hasattr(self, 'model'):
-                del self.model
-            if hasattr(self, 'tokenizer'):
-                del self.tokenizer
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            if torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-            raise
-        
-        # Ensure model is in eval mode
-        self.model.eval()
+            log_error(logger, e, {'operation': 'model_initialization'})
+            raise ModelError(f"Failed to initialize translation model: {str(e)}")
 
     def close(self):
         """Clean up resources."""
@@ -266,64 +184,62 @@ class ESCOTranslator:
                         padding=True,
                         add_special_tokens=True
                     )
-                except Exception as tokenizer_error:
-                    logger.error(f"Tokenizer error: {str(tokenizer_error)}")
-                    return text  # Return original text if tokenization fails
+                except Exception as e:
+                    log_error(logger, e, {
+                        'operation': 'tokenize',
+                        'text': base_text,
+                        'attempt': attempt + 1
+                    })
+                    if attempt == max_retries - 1:
+                        return text  # Return original text if tokenization fails
+                    continue
                 
                 # Move inputs to device
                 inputs = {k: v.to(self.device) for k, v in inputs.items()}
                 
-                # Generate translation with memory-efficient settings
-                with torch.no_grad():
-                    try:
-                        outputs = self.model.generate(
-                            inputs["input_ids"],
-                            max_length=512,
-                            num_beams=4,
-                            length_penalty=2.0,
-                            early_stopping=True,
-                            do_sample=False,
-                            no_repeat_ngram_size=2,
-                            use_cache=True
-                        )
-                    except RuntimeError as e:
-                        if "MPS" in str(e):
-                            logger.warning("MPS error, falling back to CPU for generation")
-                            # Move model and inputs to CPU temporarily
-                            self.model = self.model.to("cpu")
-                            inputs = {k: v.to("cpu") for k, v in inputs.items()}
-                            outputs = self.model.generate(
-                                inputs["input_ids"],
-                                max_length=512,
-                                num_beams=4,
-                                length_penalty=2.0,
-                                early_stopping=True,
-                                do_sample=False,
-                                no_repeat_ngram_size=2,
-                                use_cache=True
-                            )
-                            # Move model back to original device
-                            self.model = self.model.to(self.device)
-                        else:
-                            raise
+                # Generate translation
+                try:
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_length=512,
+                        num_beams=5,
+                        early_stopping=True
+                    )
+                except Exception as e:
+                    log_error(logger, e, {
+                        'operation': 'generate_translation',
+                        'text': base_text,
+                        'attempt': attempt + 1
+                    })
+                    if attempt == max_retries - 1:
+                        return text
+                    continue
                 
-                # Move output to CPU for decoding
-                outputs = outputs.cpu()
-                translated = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-                
-                # Basic validation
-                if not translated or len(translated.strip()) == 0:
-                    logger.warning(f"Empty translation for input: {text}")
-                    return text
+                # Decode the output
+                try:
+                    translated = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    return translated
+                except Exception as e:
+                    log_error(logger, e, {
+                        'operation': 'decode_translation',
+                        'text': base_text,
+                        'attempt': attempt + 1
+                    })
+                    if attempt == max_retries - 1:
+                        return text
+                    continue
                     
-                return translated
-                
             except Exception as e:
+                log_error(logger, e, {
+                    'operation': 'translate_text',
+                    'text': base_text,
+                    'attempt': attempt + 1
+                })
                 if attempt == max_retries - 1:
-                    logger.error(f"Failed to translate after {max_retries} attempts: {str(e)}")
-                    logger.error(f"Problematic text was: {text}")
                     return text
-                time.sleep(1)  # Wait before retry
+                continue
+        
+        return text  # Return original text if all retries fail
 
     def get_nodes_to_translate(self, node_type: str, property_name: str) -> List[dict]:
         """Get nodes that need translation from Weaviate."""

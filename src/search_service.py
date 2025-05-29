@@ -4,7 +4,8 @@ import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 from src.weaviate_semantic_search import ESCOSemanticSearch
-from src.logging_config import setup_logging
+from src.exceptions import SearchError, DataValidationError
+from src.logging_config import setup_logging, log_error
 
 # Setup logging
 logger = setup_logging()
@@ -21,10 +22,15 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 def run_health_check_server():
-    """Run a simple HTTP server for health checks"""
-    server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
-    logger.info("Health check server started on port 8000")
-    server.serve_forever()
+    """Run a simple health check server"""
+    try:
+        # Implementation of health check server
+        server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
+        logger.info("Health check server started on port 8000")
+        server.serve_forever()
+    except Exception as e:
+        log_error(logger, e, {'operation': 'health_check_server'})
+        raise SearchError(f"Health check server failed: {str(e)}")
 
 def main():
     """Run the search service"""
@@ -35,7 +41,8 @@ def main():
         # Validate that data is indexed
         is_valid, validation_details = search_client.validate_data()
         if not is_valid:
-            logger.error(f"Data validation failed. Please ensure all required data is indexed. Validation details: {validation_details}")
+            error_msg = f"Data validation failed. Please ensure all required data is indexed. Validation details: {validation_details}"
+            log_error(logger, DataValidationError(error_msg), {'validation_details': validation_details})
             return
         
         logger.info("Search service is ready. Data validation passed.")
@@ -50,8 +57,8 @@ def main():
             pass
             
     except Exception as e:
-        logger.error(f"Error in search service: {str(e)}")
-        raise
+        log_error(logger, e, {'operation': 'search_service_main'})
+        raise SearchError(f"Error in search service: {str(e)}")
 
 if __name__ == "__main__":
     main() 

@@ -12,7 +12,7 @@ else
 fi
 
 # Stop and remove existing containers
-docker-compose down
+docker compose down
 
 # Start with new configuration
-docker-compose up -d 
+docker compose up -d 
