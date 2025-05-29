@@ -56,10 +56,8 @@ services:
       t2v-transformers:
         condition: service_healthy
     environment:
-      - WEAVIATE_URL=http://weaviate:8080
+      - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
-      - LOG_DIR=/app/logs
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -80,10 +78,8 @@ services:
       t2v-transformers:
         condition: service_healthy
     environment:
-      - WEAVIATE_URL=http://weaviate:8080
+      - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
-      - LOG_DIR=/app/logs
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

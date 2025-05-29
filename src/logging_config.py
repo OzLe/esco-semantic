@@ -2,32 +2,43 @@ import logging
 import os
 from pathlib import Path
 import atexit
-import traceback
 from typing import Optional
+import yaml
 
 class ErrorContextFormatter(logging.Formatter):
-    """Custom formatter that includes error context when available."""
-    
-    def format(self, record: logging.LogRecord) -> str:
-        # Add error context if available
-        if hasattr(record, 'error_context'):
-            record.msg = f"{record.msg} [Context: {record.error_context}]"
-        
-        # Add traceback for errors if available
+    """Custom formatter that includes error context in log messages"""
+    def format(self, record):
         if record.exc_info:
-            record.msg = f"{record.msg}\n{traceback.format_exception(*record.exc_info)}"
-        
+            # Add error context to the message
+            record.msg = f"{record.msg} [Error: {record.exc_info[1]}]"
         return super().format(record)
 
-def setup_logging(log_level: Optional[str] = None):
+def load_config(config_path: str = "config/weaviate_config.yaml", profile: str = "default") -> dict:
+    """Load configuration from YAML file"""
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        if profile not in config:
+            raise ValueError(f"Profile '{profile}' not found in config file")
+        return config[profile]
+    except Exception as e:
+        raise ValueError(f"Failed to load config file: {str(e)}")
+
+def setup_logging(config_path: str = "config/weaviate_config.yaml", profile: str = "default", log_level: Optional[str] = None):
     """Setup logging configuration for the application
     
     Args:
-        log_level: Optional log level override. If not provided, uses LOG_LEVEL env var or defaults to INFO.
+        config_path: Path to configuration file
+        profile: Configuration profile to use
+        log_level: Optional log level override. If not provided, uses config or defaults to INFO.
     """
-    # Get log level from environment or default to INFO
-    log_level = log_level or os.getenv('LOG_LEVEL', 'INFO').upper()
-    log_dir = os.getenv('LOG_DIR', 'logs')
+    # Load configuration
+    config = load_config(config_path, profile)
+    
+    # Get log settings from config
+    app_config = config.get('app', {})
+    log_level = log_level or app_config.get('log_level', 'INFO').upper()
+    log_dir = app_config.get('log_dir', 'logs')
     
     # Create logs directory if it doesn't exist
     Path(log_dir).mkdir(parents=True, exist_ok=True)

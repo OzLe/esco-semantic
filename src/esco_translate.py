@@ -41,7 +41,7 @@ def get_device():
     return "cpu"
 
 class ESCOTranslator:
-    def __init__(self, config_path=None, profile='default', device: str = None):
+    def __init__(self, config_path=None, profile='default'):
         # Verify dependencies first
         verify_dependencies()
         
@@ -50,13 +50,17 @@ class ESCOTranslator:
             config_path = os.path.join('config', 'weaviate_config.yaml')
         
         with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+            self.config = yaml.safe_load(f)[profile]
         
         # Initialize Weaviate client
         self.client = WeaviateClient(config_path, profile)
         
+        # Get model configuration
+        model_config = self.config.get('model', {})
+        
         # Determine device
-        if device is None:
+        device = model_config.get('device', 'auto')
+        if device == "auto":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
@@ -68,7 +72,7 @@ class ESCOTranslator:
             torch.cuda.empty_cache()
         
         # Set up model cache directory
-        self.cache_dir = os.path.abspath("./model_cache")
+        self.cache_dir = os.path.abspath(model_config.get('cache_dir', "./model_cache"))
         if not os.path.exists(self.cache_dir):
             raise RuntimeError(
                 f"Model cache directory not found: {self.cache_dir}\n"
@@ -76,7 +80,8 @@ class ESCOTranslator:
             )
         
         # Find the actual model directory
-        model_dirs = glob.glob(os.path.join(self.cache_dir, "**", "models--Helsinki-NLP--opus-mt-en-he"), recursive=True)
+        model_name = model_config.get('translation_model', "Helsinki-NLP/opus-mt-en-he")
+        model_dirs = glob.glob(os.path.join(self.cache_dir, "**", f"models--{model_name.replace('/', '--')}"), recursive=True)
         if not model_dirs:
             raise RuntimeError(
                 "Could not find model directory in cache.\n"
@@ -89,59 +94,20 @@ class ESCOTranslator:
         # Find the latest snapshot directory
         snapshot_dirs = glob.glob(os.path.join(model_dir, "snapshots", "*"))
         if not snapshot_dirs:
-            raise RuntimeError(
-                "No snapshot directories found in model cache.\n"
-                "Please run 'python src/download_model.py' to download the model."
-            )
+            raise RuntimeError("No model snapshots found in cache directory")
         
-        # Use the first snapshot directory (they should be equivalent)
-        self.model_dir = snapshot_dirs[0]
-        logger.info(f"Using model directory: {self.model_dir}")
+        latest_snapshot = max(snapshot_dirs, key=os.path.getctime)
+        logger.info(f"Using model snapshot: {latest_snapshot}")
         
-        # Load model and tokenizer with safe initialization
+        # Load model and tokenizer
         try:
-            # Use MarianMT model for English to Hebrew translation
-            logger.info("Loading tokenizer from local cache...")
-            try:
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_dir,
-                    use_fast=False,
-                    local_files_only=True
-                )
-            except Exception as e:
-                log_error(logger, e, {'operation': 'load_tokenizer'})
-                raise ModelError(
-                    "Failed to load tokenizer from cache. "
-                    "Please run 'python src/download_model.py' to download the model."
-                )
-            
-            logger.info("Loading model from local cache...")
-            try:
-                self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                    self.model_dir,
-                    local_files_only=True
-                ).to(self.device)
-            except Exception as e:
-                log_error(logger, e, {'operation': 'load_model'})
-                raise ModelError(
-                    "Failed to load model from cache. "
-                    "Please run 'python src/download_model.py' to download the model."
-                )
-            
-            # Set model to evaluation mode
-            self.model.eval()
-            
-            # Run smoke test with a small batch
-            logger.info("Running smoke test...")
-            test_input = "Hello, how are you?"
-            test_output = self.translate_text(test_input)
-            if not test_output:
-                raise ValueError("Smoke test failed - translation returned empty result")
-            logger.info(f"Smoke test successful. Translated: {test_output}")
-            
+            self.tokenizer = MarianTokenizer.from_pretrained(latest_snapshot)
+            self.model = MarianMTModel.from_pretrained(latest_snapshot).to(self.device)
         except Exception as e:
-            log_error(logger, e, {'operation': 'model_initialization'})
-            raise ModelError(f"Failed to initialize translation model: {str(e)}")
+            raise ModelError(f"Failed to load model: {str(e)}")
+        
+        # Set batch size from config
+        self.batch_size = model_config.get('batch_size', 100)
 
     def close(self):
         """Clean up resources."""
@@ -332,7 +298,7 @@ def main():
 
     args = parser.parse_args()
 
-    translator = ESCOTranslator(config_path=args.config, profile=args.profile, device=args.device)
+    translator = ESCOTranslator(config_path=args.config, profile=args.profile)
     try:
         translator.translate_nodes(args.type, args.property, args.batch_size)
     finally:

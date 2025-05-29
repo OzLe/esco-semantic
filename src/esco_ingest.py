@@ -87,9 +87,17 @@ class BaseIngestor(ABC):
 class WeaviateIngestor(BaseIngestor):
     """Weaviate-specific implementation of ESCO data ingestion"""
     
-    def __init__(self, config_path=None, profile='default'):
+    def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default"):
+        """Initialize the Weaviate ingestor."""
         super().__init__(config_path, profile)
         self.client = WeaviateClient(config_path, profile)
+        
+        # Initialize repositories
+        self.skill_repo = self.client.get_repository("Skill")
+        self.occupation_repo = self.client.get_repository("Occupation")
+        self.isco_group_repo = self.client.get_repository("ISCOGroup")
+        self.skill_collection_repo = self.client.get_repository("SkillCollection")
+        self.skill_group_repo = self.client.get_repository("SkillGroup")
         self.embedding_util = ESCOEmbedding()
 
     def _get_default_config_path(self):
@@ -196,7 +204,7 @@ class WeaviateIngestor(BaseIngestor):
         """Delete all data from Weaviate"""
         try:
             # Delete all collections
-            for collection in ["Occupation", "Skill", "ISCOGroup", "SkillCollection"]:
+            for collection in ["Occupation", "Skill", "ISCOGroup", "SkillCollection", "SkillGroup"]:
                 if self.client.client.schema.exists(collection):
                     self.client.client.schema.delete_class(collection)
             
@@ -204,6 +212,23 @@ class WeaviateIngestor(BaseIngestor):
         except Exception as e:
             logger.error(f"Error deleting Weaviate data: {str(e)}")
             raise
+
+    def check_class_exists(self, class_name: str) -> bool:
+        """Check if a class exists in Weaviate and has data"""
+        try:
+            if not self.client.client.schema.exists(class_name):
+                return False
+            
+            # Get the appropriate repository
+            repo = self.client.get_repository(class_name)
+            
+            # Check if class has any objects
+            result = self.client.client.query.aggregate(class_name).with_meta_count().do()
+            count = result.get('data', {}).get('Aggregate', {}).get(class_name, [{}])[0].get('meta', {}).get('count', 0)
+            return count > 0
+        except Exception as e:
+            logger.error(f"Error checking existence of {class_name}: {str(e)}")
+            return False
 
     def ingest_isco_groups(self):
         """Ingest ISCO groups into Weaviate"""
@@ -276,7 +301,7 @@ class WeaviateIngestor(BaseIngestor):
             if groups_to_import and group_vectors:
                 logger.info(f"Starting batch import of {len(groups_to_import)} ISCO groups")
                 try:
-                    self.client.batch_import_isco_groups(groups_to_import, group_vectors)
+                    self.isco_group_repo.batch_import(groups_to_import, group_vectors)
                     logger.info(f"Successfully ingested {len(groups_to_import)} ISCO groups into Weaviate")
                 except Exception as e:
                     failed_imports = len(groups_to_import)
@@ -383,7 +408,7 @@ class WeaviateIngestor(BaseIngestor):
             if occupations_to_import and occupation_vectors:
                 logger.info(f"Starting batch import of {len(occupations_to_import)} occupations")
                 try:
-                    self.client.batch_import_occupations(occupations_to_import, occupation_vectors)
+                    self.occupation_repo.batch_import(occupations_to_import, occupation_vectors)
                     logger.info(f"Successfully ingested {len(occupations_to_import)} occupations into Weaviate")
                 except Exception as e:
                     failed_imports = len(occupations_to_import)
@@ -500,7 +525,7 @@ class WeaviateIngestor(BaseIngestor):
             if skills_to_import and skill_vectors:
                 logger.info(f"Starting batch import of {len(skills_to_import)} skills")
                 try:
-                    self.client.batch_import_skills(skills_to_import, skill_vectors)
+                    self.skill_repo.batch_import(skills_to_import, skill_vectors)
                     logger.info(f"Successfully ingested {len(skills_to_import)} skills into Weaviate")
                 except Exception as e:
                     failed_imports = len(skills_to_import)
@@ -538,7 +563,7 @@ class WeaviateIngestor(BaseIngestor):
                     optional_skills = [uri.split('/')[-1] for uri in group[group['relationType'] == 'optional']['skillUri'].tolist()]
                     
                     # Add relations
-                    self.client.add_skill_relations(
+                    self.skill_repo.add_skill_relations(
                         occupation_uri=occupation_uuid,
                         essential_skills=essential_skills,
                         optional_skills=optional_skills
@@ -576,8 +601,8 @@ class WeaviateIngestor(BaseIngestor):
                             narrower_uuid = row['narrowerUri'].split('/')[-1]
 
                             # Check if both occupations exist before creating relation
-                            broader_exists = self.client.check_object_exists("Occupation", broader_uuid)
-                            narrower_exists = self.client.check_object_exists("Occupation", narrower_uuid)
+                            broader_exists = self.skill_repo.check_object_exists("Occupation", broader_uuid)
+                            narrower_exists = self.skill_repo.check_object_exists("Occupation", narrower_uuid)
                             
                             if not broader_exists:
                                 logger.warning(f"Broader occupation {broader_uuid} not found - skipping relation")
@@ -586,7 +611,7 @@ class WeaviateIngestor(BaseIngestor):
                                 logger.warning(f"Narrower occupation {narrower_uuid} not found - skipping relation")
                                 continue
 
-                            self.client.add_hierarchical_relation(
+                            self.skill_repo.add_hierarchical_relation(
                                 broader_uri=broader_uuid,
                                 narrower_uri=narrower_uuid,
                                 relation_type="Occupation"
@@ -621,7 +646,7 @@ class WeaviateIngestor(BaseIngestor):
                             broader_uuid = row['broaderUri'].split('/')[-1]
                             narrower_uuid = row['narrowerUri'].split('/')[-1]
 
-                            self.client.add_hierarchical_relation(
+                            self.skill_repo.add_hierarchical_relation(
                                 broader_uri=broader_uuid,
                                 narrower_uri=narrower_uuid,
                                 relation_type="Skill"

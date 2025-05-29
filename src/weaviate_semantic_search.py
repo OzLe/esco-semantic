@@ -5,56 +5,31 @@ from src.logging_config import setup_logging
 from src.weaviate_client import WeaviateClient
 import torch
 import os
+import yaml
 
 # Setup logging
 logger = setup_logging()
 
-def get_device():
-    """Get the best available device for PyTorch operations."""
-    if torch.backends.mps.is_available():
-        return "mps"
-    elif torch.cuda.is_available():
+def get_device() -> str:
+    """Get the best available device for PyTorch."""
+    if torch.cuda.is_available():
         return "cuda"
+    elif torch.backends.mps.is_available():
+        return "mps"
     return "cpu"
 
 class ESCOSemanticSearch:
-    def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default", 
-                 embedding_model: str = 'sentence-transformers/multi-qa-MiniLM-L6-cos-v1'):
-        """Initialize with Weaviate client and embedding model
-        
-        Args:
-            config_path: Path to Weaviate configuration file
-            profile: Configuration profile to use
-            embedding_model: Name of the sentence transformer model to use
-        """
+    def __init__(self, config_path: str = "config/weaviate_config.yaml", profile: str = "default"):
+        """Initialize the semantic search with configuration."""
         self.client = WeaviateClient(config_path, profile)
+        self.model = SentenceTransformer('all-MiniLM-L6-v2', device=get_device())
         
-        # Get device from environment or auto-detect
-        device = os.getenv('TORCH_DEVICE', get_device())
-        if device == "mps" and not torch.backends.mps.is_available():
-            logger.warning("MPS requested but not available, falling back to CPU")
-            device = "cpu"
-        
-        logger.info(f"Using device: {device}")
-        self.model = SentenceTransformer(embedding_model, device=device)
-    
-    def is_data_indexed(self, node_type="Skill") -> bool:
-        """Check if the data is already indexed with embeddings"""
-        try:
-            if node_type == "Skill":
-                result = self.client.client.query.aggregate("Skill").with_meta_count().do()
-                return result["data"]["Aggregate"]["Skill"][0]["meta"]["count"] > 0
-            elif node_type == "Occupation":
-                result = self.client.client.query.aggregate("Occupation").with_meta_count().do()
-                return result["data"]["Aggregate"]["Occupation"][0]["meta"]["count"] > 0
-            else:
-                skill_count = self.client.client.query.aggregate("Skill").with_meta_count().do()
-                occupation_count = self.client.client.query.aggregate("Occupation").with_meta_count().do()
-                return (skill_count["data"]["Aggregate"]["Skill"][0]["meta"]["count"] > 0 or 
-                        occupation_count["data"]["Aggregate"]["Occupation"][0]["meta"]["count"] > 0)
-        except Exception as e:
-            logger.error(f"Error checking if data is indexed: {str(e)}")
-            return False
+        # Initialize repositories
+        self.skill_repo = self.client.get_repository("Skill")
+        self.occupation_repo = self.client.get_repository("Occupation")
+        self.isco_group_repo = self.client.get_repository("ISCOGroup")
+        self.skill_collection_repo = self.client.get_repository("SkillCollection")
+        self.skill_group_repo = self.client.get_repository("SkillGroup")
 
     def validate_data(self) -> Tuple[bool, Dict[str, Any]]:
         """Validate the data in the Weaviate database
@@ -97,51 +72,6 @@ class ESCOSemanticSearch:
             validation_details["errors"].append(error_msg)
             return False, validation_details
 
-    def _build_skill_query_string(self, query_embedding_list: List[float], limit: int, similarity_threshold: float, skill_fragment: str) -> str:
-        """Builds the GraphQL query string for Skill search."""
-        return f"""
-        {skill_fragment}
-        {{
-            Get {{
-                Skill(
-                    limit: {limit}
-                    nearVector: {{
-                        vector: {query_embedding_list}
-                        certainty: {similarity_threshold}
-                    }}
-                ) {{
-                    ...SkillFields
-                    _additional {{
-                        certainty
-                    }}
-                }}
-            }}
-        }}
-        """
-
-    def _build_occupation_query_string(self, query_embedding_list: List[float], limit: int, similarity_threshold: float, skill_fragment: str, occupation_fragment: str) -> str:
-        """Builds the GraphQL query string for Occupation search."""
-        return f"""
-        {skill_fragment}
-        {occupation_fragment}
-        {{
-            Get {{
-                Occupation(
-                    limit: {limit}
-                    nearVector: {{
-                        vector: {query_embedding_list}
-                        certainty: {similarity_threshold}
-                    }}
-                ) {{
-                    ...OccupationFields
-                    _additional {{
-                        certainty
-                    }}
-                }}
-            }}
-        }}
-        """
-
     def _execute_query(self, query_string: str, node_type_for_error_logging: str) -> Optional[List[Dict]]:
         """Executes a GraphQL query and returns the results, handling basic errors."""
         try:
@@ -149,8 +79,11 @@ class ESCOSemanticSearch:
             # Log the actual query for debugging
             logger.info(f"GraphQL query: {query_string[:500]}...")  # First 500 chars
             
-            # client.query.raw() executes the GraphQL query string directly.
-            result = self.client.client.query.raw(query_string)
+            # Get the appropriate repository
+            repo = self.client.get_repository(node_type_for_error_logging)
+            
+            # Execute the query using the repository
+            result = repo._execute_raw_query(query_string)
             
             logger.info(f"Raw query result keys: {result.keys() if result else 'None'}")
             
@@ -170,46 +103,48 @@ class ESCOSemanticSearch:
             logger.error(f"Unexpected error during Weaviate query for {node_type_for_error_logging}: {str(e)}")
             return None # Indicate error to caller
 
-    def _process_search_results(self, raw_results: List[Dict], node_type: str) -> List[Dict]:
-        """Processes raw search results into the final format."""
-        search_results = []
-        for record in raw_results:
-            result_dict = {
-                "uri": record["conceptUri"],
-                "label": record["preferredLabel_en"],
-                "description": record.get("description_en", ""),
-                "type": record.get("type", node_type), # Ensure 'type' is present
-                "score": record["_additional"]["certainty"]
+    def get_related_graph(self, uri: str, node_type: str = "Skill") -> Optional[Dict]:
+        """Get related graph for a node"""
+        try:
+            # Get the appropriate repository
+            repo = self.client.get_repository(node_type)
+            
+            # Get the node
+            node = repo.get_by_uri(uri)
+            if not node:
+                logger.warning(f"Node {uri} not found")
+                return None
+            
+            # Get related skills using semantic search
+            related_skills = self.skill_repo.search(
+                query_vector=self.model.encode(node["preferredLabel_en"]),
+                limit=10,
+                certainty=0.7
+            )
+            
+            # Format the result
+            graph_data = {
+                "node": {
+                    "uri": node["conceptUri"],
+                    "label": node["preferredLabel_en"],
+                    "description": node.get("description_en", "")
+                },
+                "related_skills": [
+                    {
+                        "uri": skill["conceptUri"],
+                        "label": skill["preferredLabel_en"],
+                        "description": skill.get("description_en", ""),
+                        "certainty": skill.get("_additional", {}).get("certainty", 0)
+                    }
+                    for skill in related_skills
+                ]
             }
             
-            # Add additional fields based on node type
-            current_record_type = record.get("type", node_type)
-            if current_record_type == "Skill":
-                result_dict.update({
-                    "skillType": record.get("skillType"),
-                    "broaderSkills": self._process_broader_skills(record.get("broaderSkill", [])),
-                    "skillCollections": [
-                        {"uri": c["conceptUri"], "label": c["preferredLabel_en"]}
-                        for c in record.get("memberOfSkillCollection", [])
-                    ],
-                    "relatedSkills": [
-                        {
-                            "uri": s["conceptUri"],
-                            "label": s["preferredLabel_en"]
-                        }
-                        for s in record.get("hasRelatedSkill", [])
-                    ]
-                })
-            elif current_record_type == "Occupation":
-                result_dict.update({
-                    "code": record.get("code"),
-                    "broaderOccupations": self._process_broader_occupations(record.get("broaderOccupation", [])),
-                    "essentialSkills": self._process_skills(record.get("hasEssentialSkill", [])),
-                    "optionalSkills": self._process_skills(record.get("hasOptionalSkill", []))
-                })
+            return graph_data
             
-            search_results.append(result_dict)
-        return search_results
+        except Exception as e:
+            logger.error(f"Error getting related graph for {uri}: {str(e)}")
+            return None
 
     def search(self, query_text: str, node_type: str = "Skill", limit: int = 10, 
                search_only: bool = False, similarity_threshold: float = 0.5) -> List[Dict]:
@@ -438,247 +373,11 @@ class ESCOSemanticSearch:
                 results = results[:limit]
             
             # Process results
-            return self._process_search_results(results, node_type)
+            return results
             
         except Exception as e:
             logger.error(f"Error during semantic search: {str(e)}")
             return []
-
-    def _process_broader_skills(self, broader_skills):
-        """Helper method to process broader skills hierarchy"""
-        if not broader_skills:
-            return []
-        
-        result = []
-        for skill in broader_skills:
-            skill_dict = {
-                "uri": skill["conceptUri"],
-                "label": skill["preferredLabel_en"]
-            }
-            if "broaderSkill" in skill:
-                skill_dict["broaderSkills"] = self._process_broader_skills(skill["broaderSkill"])
-            result.append(skill_dict)
-        return result
-
-    def _process_broader_occupations(self, broader_occupations):
-        """Helper method to process broader occupations hierarchy"""
-        if not broader_occupations:
-            return []
-        
-        result = []
-        for occupation in broader_occupations:
-            occupation_dict = {
-                "uri": occupation["conceptUri"],
-                "label": occupation["preferredLabel_en"],
-                "code": occupation.get("code")
-            }
-            if "broaderOccupation" in occupation:
-                occupation_dict["broaderOccupations"] = self._process_broader_occupations(occupation["broaderOccupation"])
-            result.append(occupation_dict)
-        return result
-
-    def _process_skills(self, skills):
-        """Helper method to process skills with their hierarchies and collections"""
-        if not skills:
-            return []
-        
-        result = []
-        for skill in skills:
-            skill_dict = {
-                "uri": skill["conceptUri"],
-                "label": skill["preferredLabel_en"],
-                "skillType": skill.get("skillType")
-            }
-            result.append(skill_dict)
-        return result
-
-    def get_related_graph(self, uri: str, node_type: str = "Skill") -> Optional[Dict]:
-        """Get related graph for a node"""
-        try:
-            if node_type == "Skill":
-                # Get the skill node
-                skill_result = (
-                    self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_where({
-                        "path": ["conceptUri"],
-                        "operator": "Equal",
-                        "valueString": uri
-                    })
-                    .do()
-                )
-                
-                if not skill_result["data"]["Get"]["Skill"]:
-                    return None
-                
-                skill = skill_result["data"]["Get"]["Skill"][0]
-                
-                # Get related occupations
-                occupation_result = (
-                    self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_where({
-                        "path": ["hasEssentialSkill"],
-                        "operator": "ContainsAny",
-                        "valueString": [uri]
-                    })
-                    .do()
-                )
-                
-                optional_occupation_result = (
-                    self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_where({
-                        "path": ["hasOptionalSkill"],
-                        "operator": "ContainsAny",
-                        "valueString": [uri]
-                    })
-                    .do()
-                )
-                
-                # Get related skills
-                related_skills_result = (
-                    self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_near_vector({
-                        "vector": self.model.encode(skill["preferredLabel_en"]),
-                        "certainty": 0.7
-                    })
-                    .with_limit(10)
-                    .do()
-                )
-                
-                # Format the result
-                graph_data = {
-                    "node": {
-                        "uri": skill["conceptUri"],
-                        "label": skill["preferredLabel_en"],
-                        "description": skill.get("description_en", "")
-                    },
-                    "related": {
-                        "essential_occupations": [
-                            {
-                                "uri": o["conceptUri"],
-                                "label": o["preferredLabel_en"],
-                                "description": o.get("description_en", "")
-                            }
-                            for o in occupation_result["data"]["Get"]["Occupation"]
-                        ],
-                        "optional_occupations": [
-                            {
-                                "uri": o["conceptUri"],
-                                "label": o["preferredLabel_en"],
-                                "description": o.get("description_en", "")
-                            }
-                            for o in optional_occupation_result["data"]["Get"]["Occupation"]
-                        ],
-                        "related_skills": [
-                            {
-                                "uri": s["conceptUri"],
-                                "label": s["preferredLabel_en"],
-                                "description": s.get("description_en", "")
-                            }
-                            for s in related_skills_result["data"]["Get"]["Skill"]
-                            if s["conceptUri"] != uri  # Exclude the original skill
-                        ]
-                    }
-                }
-                
-            else:  # Occupation
-                # Get the occupation node
-                occupation_result = (
-                    self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_where({
-                        "path": ["conceptUri"],
-                        "operator": "Equal",
-                        "valueString": uri
-                    })
-                    .do()
-                )
-                
-                if not occupation_result["data"]["Get"]["Occupation"]:
-                    return None
-                
-                occupation = occupation_result["data"]["Get"]["Occupation"][0]
-                
-                # Get essential skills
-                essential_skills_result = (
-                    self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_where({
-                        "path": ["conceptUri"],
-                        "operator": "ContainsAny",
-                        "valueString": occupation.get("hasEssentialSkill", [])
-                    })
-                    .do()
-                )
-                
-                # Get optional skills
-                optional_skills_result = (
-                    self.client.client.query
-                    .get("Skill", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_where({
-                        "path": ["conceptUri"],
-                        "operator": "ContainsAny",
-                        "valueString": occupation.get("hasOptionalSkill", [])
-                    })
-                    .do()
-                )
-                
-                # Get related occupations
-                related_occupations_result = (
-                    self.client.client.query
-                    .get("Occupation", ["conceptUri", "preferredLabel_en", "description_en"])
-                    .with_near_vector({
-                        "vector": self.model.encode(occupation["preferredLabel_en"]),
-                        "certainty": 0.7
-                    })
-                    .with_limit(10)
-                    .do()
-                )
-                
-                # Format the result
-                graph_data = {
-                    "node": {
-                        "uri": occupation["conceptUri"],
-                        "label": occupation["preferredLabel_en"],
-                        "description": occupation.get("description_en", "")
-                    },
-                    "related": {
-                        "essential_skills": [
-                            {
-                                "uri": s["conceptUri"],
-                                "label": s["preferredLabel_en"],
-                                "description": s.get("description_en", "")
-                            }
-                            for s in (essential_skills_result.get("data", {}).get("Get", {}).get("Skill", []) or [])
-                        ],
-                        "optional_skills": [
-                            {
-                                "uri": s["conceptUri"],
-                                "label": s["preferredLabel_en"],
-                                "description": s.get("description_en", "")
-                            }
-                            for s in (optional_skills_result.get("data", {}).get("Get", {}).get("Skill", []) or [])
-                        ],
-                        "related_occupations": [
-                            {
-                                "uri": o["conceptUri"],
-                                "label": o["preferredLabel_en"],
-                                "description": o.get("description_en", "")
-                            }
-                            for o in (related_occupations_result.get("data", {}).get("Get", {}).get("Occupation", []) or [])
-                            if o["conceptUri"] != uri  # Exclude the original occupation
-                        ]
-                    }
-                }
-            
-            return graph_data
-            
-        except Exception as e:
-            logger.error(f"Error getting related graph: {str(e)}")
-            return None
 
     def semantic_search_with_profile(self, query_text: str, limit: int = 10, 
                                    similarity_threshold: float = 0.5) -> List[Dict]:
@@ -753,22 +452,10 @@ class ESCOSemanticSearch:
                     output.append(f"   Description: {occupation['description']}")
                 
                 # Format essential skills
-                if profile["related"]["essential_skills"]:
+                if profile["related_skills"]:
                     output.append("\n   Essential Skills:")
-                    for skill in profile["related"]["essential_skills"]:
+                    for skill in profile["related_skills"]:
                         output.append(f"   • {skill['label']}")
-                
-                # Format optional skills
-                if profile["related"]["optional_skills"]:
-                    output.append("\n   Optional Skills:")
-                    for skill in profile["related"]["optional_skills"]:
-                        output.append(f"   • {skill['label']}")
-                
-                # Format related occupations
-                if profile["related"]["related_occupations"]:
-                    output.append("\n   Related Occupations:")
-                    for occ in profile["related"]["related_occupations"]:
-                        output.append(f"   • {occ['label']}")
             else:
                 # Handle basic search results
                 output.append(f"{i}. [{result.get('type', 'Result')}] {result['label']}")

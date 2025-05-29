@@ -1,25 +1,53 @@
 default:
-  url: "http://weaviate:8080"
-  vector_index_config:
-    distance: "cosine"
-    efConstruction: 128
-    maxConnections: 64
-  batch_size: 100
-  retry_attempts: 3
-  retry_delay: 5
-  esco:
+  # Weaviate settings
+  weaviate:
+    url: "http://weaviate:8080"
+    vector_index_config:
+      distance: "cosine"
+      efConstruction: 128
+      maxConnections: 64
+    batch_size: 100
+    retry_attempts: 3
+    retry_delay: 5
+
+  # Application settings
+  app:
     data_dir: "data/esco"
+    log_dir: "logs"
+    log_level: "INFO"
+    python_unbuffered: true
+
+  # Model settings
+  model:
+    device: "auto"  # auto, cpu, cuda, mps
+    embedding_model: "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
+    translation_model: "Helsinki-NLP/opus-mt-en-he"
+    cache_dir: "model_cache"
     batch_size: 100
 
 aura:
-  url: "http://weaviate:8080"
-  vector_index_config:
-    distance: "cosine"
-    efConstruction: 128
-    maxConnections: 64
-  batch_size: 100
-  retry_attempts: 5
-  retry_delay: 10
-  esco:
+  # Weaviate settings
+  weaviate:
+    url: "http://weaviate:8080"
+    vector_index_config:
+      distance: "cosine"
+      efConstruction: 128
+      maxConnections: 64
+    batch_size: 100
+    retry_attempts: 5
+    retry_delay: 10
+
+  # Application settings
+  app:
     data_dir: "data/esco"
+    log_dir: "logs"
+    log_level: "INFO"
+    python_unbuffered: true
+
+  # Model settings
+  model:
+    device: "auto"  # auto, cpu, cuda, mps
+    embedding_model: "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
+    translation_model: "Helsinki-NLP/opus-mt-en-he"
+    cache_dir: "model_cache"
     batch_size: 100 
