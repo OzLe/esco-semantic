@@ -173,4 +173,148 @@ class WeaviateClient:
         """Close the Weaviate client and clear repositories."""
         RepositoryFactory.clear_repositories()
         # Weaviate client doesn't need explicit closing
-        pass 
+        pass
+
+    def check_object_exists(self, class_name: str, object_uri: str) -> bool:
+        """Check if an object exists by its URI."""
+        try:
+            result = (
+                self.client.query
+                .get(class_name, ["conceptUri"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": object_uri
+                })
+                .do()
+            )
+            return len(result["data"]["Get"][class_name]) > 0
+        except Exception as e:
+            logger.error(f"Error checking existence of {class_name} {object_uri}: {str(e)}")
+            return False
+
+    def batch_import_skill_groups(self, data_list: List[Dict[str, Any]], vectors: List[List[float]]):
+        """Import skill groups using the repository."""
+        repo = self.get_repository("SkillGroup")
+        return repo.batch_import(data_list, vectors)
+
+    def batch_import_skill_collections(self, data_list: List[Dict[str, Any]], vectors: List[List[float]]):
+        """Import skill collections using the repository."""
+        repo = self.get_repository("SkillCollection")
+        return repo.batch_import(data_list, vectors)
+
+    def add_occupation_group_relation(self, occupation_uri: str, group_uri: str) -> bool:
+        """Add relation between occupation and ISCO group."""
+        try:
+            # Get occupation ID
+            occ_result = (
+                self.client.query
+                .get("Occupation", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": occupation_uri
+                })
+                .do()
+            )
+            
+            if not occ_result["data"]["Get"]["Occupation"]:
+                return False
+                
+            occ_id = occ_result["data"]["Get"]["Occupation"][0]["_additional"]["id"]
+            
+            # Get ISCO group ID
+            group_result = (
+                self.client.query
+                .get("ISCOGroup", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": group_uri
+                })
+                .do()
+            )
+            
+            if not group_result["data"]["Get"]["ISCOGroup"]:
+                return False
+                
+            group_id = group_result["data"]["Get"]["ISCOGroup"][0]["_additional"]["id"]
+            
+            # Add relation
+            self.client.data_object.reference.add(
+                from_uuid=occ_id,
+                from_class_name="Occupation",
+                from_property_name="memberOfISCOGroup",
+                to_uuid=group_id,
+                to_class_name="ISCOGroup"
+            )
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add occupation-group relation: {str(e)}")
+            return False
+
+    def add_skill_collection_relation(self, collection_uri: str, skill_uri: str) -> bool:
+        """Add relation between skill collection and skill."""
+        try:
+            # Get collection ID
+            coll_result = (
+                self.client.query
+                .get("SkillCollection", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": collection_uri
+                })
+                .do()
+            )
+            
+            if not coll_result["data"]["Get"]["SkillCollection"]:
+                return False
+                
+            coll_id = coll_result["data"]["Get"]["SkillCollection"][0]["_additional"]["id"]
+            
+            # Get skill ID
+            skill_result = (
+                self.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": skill_uri
+                })
+                .do()
+            )
+            
+            if not skill_result["data"]["Get"]["Skill"]:
+                return False
+                
+            skill_id = skill_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+            
+            # Add relation
+            self.client.data_object.reference.add(
+                from_uuid=coll_id,
+                from_class_name="SkillCollection",
+                from_property_name="hasSkill",
+                to_uuid=skill_id,
+                to_class_name="Skill"
+            )
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add skill-collection relation: {str(e)}")
+            return False
+
+    def add_skill_to_skill_relation(self, from_skill_uri: str, to_skill_uri: str, relation_type: str) -> bool:
+        """Add skill-to-skill relation."""
+        skill_repo = self.get_repository("Skill")
+        return skill_repo.add_skill_to_skill_relation(from_skill_uri, to_skill_uri, relation_type)
+
+    def add_broader_skill_relation(self, skill_uri: str, broader_uri: str) -> bool:
+        """Add broader skill relation."""
+        skill_repo = self.get_repository("Skill")
+        return skill_repo.add_hierarchical_relation(broader_uri, skill_uri) 

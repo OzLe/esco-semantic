@@ -33,8 +33,8 @@ class BaseIngestor(ABC):
             profile (str): Configuration profile to use
         """
         self.config = self._load_config(config_path, profile)
-        self.esco_dir = self.config['esco']['data_dir']
-        self.batch_size = self.config['esco'].get('batch_size', 100)
+        self.esco_dir = self.config['app']['data_dir']
+        self.batch_size = self.config['weaviate'].get('batch_size', 100)
         logger.info(f"Using batch size of {self.batch_size} for {profile} profile")
 
     def _load_config(self, config_path, profile):

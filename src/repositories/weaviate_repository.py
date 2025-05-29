@@ -140,7 +140,7 @@ class WeaviateRepository(BaseRepository):
         try:
             results = []
             with self.client.client.batch as batch:
-                batch.batch_size = self.client.config['batch_size']
+                batch.batch_size = self.client.config['weaviate']['batch_size']
                 for data, vector in zip(data_list, vectors):
                     vector_list = vector.tolist() if isinstance(vector, np.ndarray) else vector
                     result = batch.add_data_object(
@@ -178,4 +178,139 @@ class WeaviateRepository(BaseRepository):
     
     def check_object_exists(self, uri: str) -> bool:
         """Check if an object with the given URI exists."""
-        return self.exists(uri) 
+        return self.exists(uri)
+
+    def add_skill_relations(self, occupation_uri: str, essential_skills: List[str], optional_skills: List[str]) -> bool:
+        """Add skill relations to an occupation (delegate to occupation repository)."""
+        try:
+            occupation_repo = self.client.get_repository("Occupation")
+            return occupation_repo.add_skill_relations(occupation_uri, essential_skills, optional_skills)
+        except Exception as e:
+            logger.error(f"Failed to add skill relations for {occupation_uri}: {str(e)}")
+            return False
+
+    def add_hierarchical_relation(self, broader_uri: str, narrower_uri: str, relation_type: str = "Skill") -> bool:
+        """Add a hierarchical relation between two entities."""
+        try:
+            # Get broader entity ID
+            broader_result = (
+                self.client.client.query
+                .get(relation_type, ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": broader_uri
+                })
+                .do()
+            )
+            
+            if not broader_result["data"]["Get"][relation_type]:
+                return False
+                
+            broader_id = broader_result["data"]["Get"][relation_type][0]["_additional"]["id"]
+            
+            # Get narrower entity ID
+            narrower_result = (
+                self.client.client.query
+                .get(relation_type, ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": narrower_uri
+                })
+                .do()
+            )
+            
+            if not narrower_result["data"]["Get"][relation_type]:
+                return False
+                
+            narrower_id = narrower_result["data"]["Get"][relation_type][0]["_additional"]["id"]
+            
+            # Add relation
+            self.client.client.data_object.reference.add(
+                from_uuid=broader_id,
+                from_class_name=relation_type,
+                from_property_name="hasNarrower",
+                to_uuid=narrower_id,
+                to_class_name=relation_type
+            )
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add hierarchical relation: {str(e)}")
+            return False
+
+    def add_skill_to_skill_relation(self, from_skill_uri: str, to_skill_uri: str, relation_type: str) -> bool:
+        """Add a relation between two skills."""
+        try:
+            # Get source skill ID
+            from_result = (
+                self.client.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": from_skill_uri
+                })
+                .do()
+            )
+            
+            if not from_result["data"]["Get"]["Skill"]:
+                return False
+                
+            from_id = from_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+            
+            # Get target skill ID
+            to_result = (
+                self.client.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": to_skill_uri
+                })
+                .do()
+            )
+            
+            if not to_result["data"]["Get"]["Skill"]:
+                return False
+                
+            to_id = to_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+            
+            # Add relation based on type
+            if relation_type == "broader":
+                self.client.client.data_object.reference.add(
+                    from_uuid=from_id,
+                    from_class_name="Skill",
+                    from_property_name="hasBroader",
+                    to_uuid=to_id,
+                    to_class_name="Skill"
+                )
+            elif relation_type == "narrower":
+                self.client.client.data_object.reference.add(
+                    from_uuid=from_id,
+                    from_class_name="Skill",
+                    from_property_name="hasNarrower",
+                    to_uuid=to_id,
+                    to_class_name="Skill"
+                )
+            elif relation_type == "related":
+                self.client.client.data_object.reference.add(
+                    from_uuid=from_id,
+                    from_class_name="Skill",
+                    from_property_name="hasRelated",
+                    to_uuid=to_id,
+                    to_class_name="Skill"
+                )
+            else:
+                logger.error(f"Unknown relation type: {relation_type}")
+                return False
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add skill-to-skill relation: {str(e)}")
+            return False 
