@@ -32,6 +32,87 @@ class WeaviateRepository(BaseRepository):
             logger.error(f"Failed to create {self.class_name}: {str(e)}")
             raise WeaviateError(f"Failed to create {self.class_name}: {str(e)}")
     
+    def create_object(self, properties: Dict[str, Any], uuid: Optional[str] = None, vector: Optional[List[float]] = None) -> str:
+        """Legacy method for creating objects with properties and UUID."""
+        try:
+            # Map 'uri' to 'conceptUri' for consistency with schema
+            if 'uri' in properties:
+                properties['conceptUri'] = properties.pop('uri')
+            
+            if uuid:
+                # Use batch to create with specific UUID
+                with self.client.client.batch as batch:
+                    batch.batch_size = 1
+                    result = batch.add_data_object(
+                        data_object=properties,
+                        class_name=self.class_name,
+                        uuid=uuid,
+                        vector=vector
+                    )
+                return result
+            else:
+                return self.create(properties, vector)
+        except Exception as e:
+            logger.error(f"Failed to create {self.class_name} object: {str(e)}")
+            raise WeaviateError(f"Failed to create {self.class_name} object: {str(e)}")
+    
+    def get_all_objects(self) -> List[Dict[str, Any]]:
+        """Get all objects of this class type."""
+        try:
+            result = (
+                self.client.client.query
+                .get(self.class_name)
+                .with_additional(["id"])
+                .do()
+            )
+            objects = result.get("data", {}).get("Get", {}).get(self.class_name, [])
+            # Map the additional id to _id for backward compatibility
+            for obj in objects:
+                if "_additional" in obj and "id" in obj["_additional"]:
+                    obj["_id"] = obj["_additional"]["id"]
+            return objects
+        except Exception as e:
+            logger.error(f"Failed to get all {self.class_name} objects: {str(e)}")
+            return []
+    
+    def count_objects(self) -> int:
+        """Count the number of objects in this class."""
+        try:
+            result = (
+                self.client.client.query
+                .aggregate(self.class_name)
+                .with_meta_count()
+                .do()
+            )
+            return result.get("data", {}).get("Aggregate", {}).get(self.class_name, [{}])[0].get("meta", {}).get("count", 0)
+        except Exception as e:
+            logger.error(f"Failed to count {self.class_name} objects: {str(e)}")
+            return 0
+    
+    def get_objects_by_property(self, property_name: str, property_value: str) -> List[Dict[str, Any]]:
+        """Get objects by a specific property value."""
+        try:
+            result = (
+                self.client.client.query
+                .get(self.class_name)
+                .with_additional(["id"])
+                .with_where({
+                    "path": [property_name],
+                    "operator": "Equal",
+                    "valueString": property_value
+                })
+                .do()
+            )
+            objects = result.get("data", {}).get("Get", {}).get(self.class_name, [])
+            # Map the additional id to _id for backward compatibility
+            for obj in objects:
+                if "_additional" in obj and "id" in obj["_additional"]:
+                    obj["_id"] = obj["_additional"]["id"]
+            return objects
+        except Exception as e:
+            logger.error(f"Failed to get {self.class_name} objects by {property_name}={property_value}: {str(e)}")
+            return []
+    
     def get_by_uri(self, uri: str) -> Optional[Dict[str, Any]]:
         """Get an entity by its URI from Weaviate, including its ID."""
         try:

@@ -391,7 +391,7 @@ class WeaviateClient:
             metadata = {
                 "metaType": "ingestion_status",
                 "status": status,  # "in_progress", "completed", "failed"
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),  # RFC3339 format
                 "version": "1.0",
                 "details": json.dumps(details or {})
             }

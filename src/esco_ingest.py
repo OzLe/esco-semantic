@@ -309,8 +309,18 @@ class WeaviateIngestor(BaseIngestor):
                         "regulatedProfessionNote_en": row.get("regulatedProfessionNote", ""),
                     }
 
-                    # Clean empty values
+                    # Clean empty values and validate float values
                     occupation_data = {k: v for k, v in occupation_data.items() if v is not None and v != ""}
+                    
+                    # Validate float values if any exist
+                    for key, value in occupation_data.items():
+                        if isinstance(value, float):
+                            if not np.isfinite(value):
+                                logger.warning(f"Skipping invalid float value for {key} in occupation {row.get('conceptUri', 'unknown')}")
+                                occupation_data[key] = None
+
+                    # Remove None values after validation
+                    occupation_data = {k: v for k, v in occupation_data.items() if v is not None}
 
                     # Create UUID from URI
                     uuid = occupation_data["uri"].split("/")[-1]

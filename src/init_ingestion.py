@@ -157,7 +157,7 @@ if __name__ == "__main__":
     # Handle retry logic for in-progress ingestion (same logic as before)
     if exit_code == 1:
         logger.info("Waiting for in-progress ingestion...")
-        time.sleep(30)
+        time.sleep(3800)
         sys.exit(1)  # Signal to retry
         
     sys.exit(exit_code) 

@@ -1,9 +1,12 @@
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 import numpy as np
+import logging
 from .weaviate_repository import WeaviateRepository
 
 if TYPE_CHECKING:
     from ..esco_weaviate_client import WeaviateClient
+
+logger = logging.getLogger(__name__)
 
 class SkillRepository(WeaviateRepository):
     """Repository for Skill entities."""
@@ -11,6 +14,7 @@ class SkillRepository(WeaviateRepository):
     def __init__(self, client: 'WeaviateClient'):
         """Initialize the Skill repository."""
         super().__init__(client, "Skill")
+        self.logger = logger
     
     def add_skill_to_skill_relation(self, from_skill_uri: str, to_skill_uri: str, relation_type: str) -> bool:
         """Add a related skill reference between two skills."""
@@ -182,4 +186,52 @@ class SkillRepository(WeaviateRepository):
             return True
         except Exception as e:
             self.logger.error(f"Failed to add broader skill relation: {str(e)}")
+            return False
+
+    def add_skill_collection_relation(self, skill_uri: str, collection_uri: str) -> bool:
+        """Add a relation between a skill and a skill collection."""
+        try:
+            # Get skill ID
+            skill_result = (
+                self.client.client.query
+                .get("Skill", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": skill_uri
+                })
+                .do()
+            )
+            if not skill_result["data"]["Get"]["Skill"]:
+                return False
+            skill_id = skill_result["data"]["Get"]["Skill"][0]["_additional"]["id"]
+
+            # Get skill collection ID
+            collection_result = (
+                self.client.client.query
+                .get("SkillCollection", ["conceptUri"])
+                .with_additional(["id"])
+                .with_where({
+                    "path": ["conceptUri"],
+                    "operator": "Equal",
+                    "valueString": collection_uri
+                })
+                .do()
+            )
+            if not collection_result["data"]["Get"]["SkillCollection"]:
+                return False
+            collection_id = collection_result["data"]["Get"]["SkillCollection"][0]["_additional"]["id"]
+
+            # Add relation from collection to skill
+            self.client.client.data_object.reference.add(
+                from_uuid=collection_id,
+                from_class_name="SkillCollection",
+                from_property_name="hasSkill",
+                to_uuid=skill_id,
+                to_class_name="Skill"
+            )
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to add skill collection relation: {str(e)}")
             return False 
