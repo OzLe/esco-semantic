@@ -3,6 +3,8 @@
 Initialization script for ESCO data ingestion.
 This script handles the initialization and monitoring of the ingestion process,
 ensuring proper status tracking and error handling.
+
+This module now uses the Service Layer pattern instead of duplicating business logic.
 """
 
 import sys
@@ -13,87 +15,23 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from .esco_weaviate_client import WeaviateClient
+from .services.ingestion_service import IngestionService
+from .models.ingestion_models import (
+    IngestionConfig,
+    IngestionState,
+    IngestionDecision,
+    IngestionResult,
+    ValidationResult
+)
 from .logging_config import setup_logging, log_error
 from .exceptions import WeaviateError
 
 logger = setup_logging()
 
-def check_ingestion_status(client: WeaviateClient) -> Dict[str, Any]:
-    """
-    Check the current ingestion status.
-    
-    Args:
-        client: Initialized WeaviateClient instance
-        
-    Returns:
-        Dict containing status information
-    """
-    try:
-        status = client.get_ingestion_status()
-        logger.info(f"Current ingestion status: {status.get('status')}")
-        return status
-    except Exception as e:
-        log_error(logger, e, {'operation': 'check_ingestion_status'})
-        raise
-
-def verify_post_ingestion(client: WeaviateClient) -> bool:
-    """
-    Verify the ingestion status after completion.
-    
-    Args:
-        client: Initialized WeaviateClient instance
-        
-    Returns:
-        bool: True if verification successful, False otherwise
-    """
-    try:
-        final_status = client.get_ingestion_status()
-        current_status = final_status.get('status')
-        
-        if current_status == 'completed':
-            logger.info("Post-ingestion verification: Status is COMPLETED")
-            return True
-            
-        logger.warning(f"Post-ingestion verification: Status is '{current_status}' (expected 'completed')")
-        
-        # Update status to failed if not already
-        if current_status != 'failed':
-            details = {
-                'reason': 'Post-ingestion verification check failed',
-                'final_status_observed': current_status
-            }
-            
-            # Safely handle previous details
-            previous_details = final_status.get('details')
-            if isinstance(previous_details, str):
-                try:
-                    details['previous_status_details'] = json.loads(previous_details)
-                except json.JSONDecodeError:
-                    details['previous_status_details_raw'] = previous_details
-            elif isinstance(previous_details, dict):
-                details['previous_status_details'] = previous_details
-                
-            client.set_ingestion_metadata(status='failed', details=details)
-            logger.info("Updated status to 'failed'")
-            
-        return False
-        
-    except Exception as e:
-        log_error(logger, e, {'operation': 'verify_post_ingestion'})
-        try:
-            client.set_ingestion_metadata(
-                status='failed',
-                details={'reason': 'Exception during post-ingestion verification', 'error': str(e)}
-            )
-            logger.info("Attempted to set status to 'failed' after verification error")
-        except Exception as set_status_e:
-            log_error(logger, set_status_e, {'operation': 'set_failed_status'})
-        return False
 
 def main(config_path: str = "config/weaviate_config.yaml", profile: str = "default") -> int:
     """
-    Main function to handle ingestion initialization.
+    Main function to handle ingestion initialization using the service layer.
     
     Args:
         config_path: Path to configuration file
@@ -102,40 +40,110 @@ def main(config_path: str = "config/weaviate_config.yaml", profile: str = "defau
     Returns:
         int: Exit code (0: success, 1: in progress, 2: needs ingestion, 3: verification failed)
     """
+    service = None
     try:
-        # Initialize client and ensure schema exists
-        client = WeaviateClient(config_path, profile)
-        client.ensure_schema()
+        logger.info(f"Initializing ingestion check with config: {config_path}, profile: {profile}")
         
-        # Check current status
-        status = check_ingestion_status(client)
-        current_status = status.get('status')
+        # Create ingestion configuration for container mode
+        ingestion_config = IngestionConfig(
+            config_path=config_path,
+            profile=profile,
+            force_reingest=False,  # Container mode never forces reingest
+            non_interactive=True,  # Container mode is always non-interactive
+            docker_env=True  # This is running in container context
+        )
         
-        if current_status == 'completed':
+        # Initialize service
+        service = IngestionService(ingestion_config)
+        
+        # Get current state
+        current_state = service.get_current_state()
+        logger.info(f"Current ingestion state: {current_state.value}")
+        
+        # Handle completed state
+        if current_state == IngestionState.COMPLETED:
             logger.info("Data already ingested, skipping...")
             return 0
-        elif current_status == 'in_progress':
+        
+        # Handle in-progress state  
+        elif current_state == IngestionState.IN_PROGRESS:
             logger.info("Ingestion in progress, waiting...")
             return 1
-        else:  # 'not_started', 'failed', 'unknown'
-            logger.info(f"Initial status is '{current_status}'. Starting new ingestion...")
+        
+        # Handle other states - need to run ingestion
+        else:  # NOT_STARTED, FAILED, UNKNOWN
+            logger.info(f"Initial state is '{current_state.value}'. Starting new ingestion...")
             
-            # Run ingestion
-            logger.info("Running ingestion...")
-            os.system(f"python -m src.esco_cli ingest --config {config_path} --profile {profile}")
+            # Check if we should run ingestion (handles non-interactive mode logic)
+            decision = service.should_run_ingestion(force_reingest=False)
             
-            # Verify ingestion
-            logger.info("Ingestion command finished. Verifying status...")
-            if verify_post_ingestion(client):
-                return 0
-            return 3
+            if not decision.should_run:
+                logger.warning(f"Ingestion decision: {decision.reason}")
+                if decision.force_required:
+                    logger.info("Use --force-reingest in CLI to override this decision.")
+                    return 2  # Needs manual intervention
+                return 2  # Needs ingestion but can't proceed
+            
+            # Validate prerequisites before starting
+            logger.info("Validating prerequisites...")
+            validation = service.validate_prerequisites()
+            
+            if not validation.is_valid:
+                logger.error("Prerequisites validation failed:")
+                for error in validation.errors:
+                    logger.error(f"  • {error}")
+                return 2
+            
+            if validation.warnings:
+                logger.warning("Prerequisites validation warnings:")
+                for warning in validation.warnings:
+                    logger.warning(f"  • {warning}")
+            
+            # Run ingestion using the service layer
+            logger.info("Running ingestion via service layer...")
+            result = service.run_ingestion()
+            
+            # Check result
+            if result.success:
+                logger.info(f"Ingestion completed successfully in {result.duration:.1f} seconds")
+                
+                # Verify completion
+                logger.info("Verifying ingestion completion...")
+                verification = service.verify_completion()
+                
+                if verification.is_valid:
+                    logger.info("Post-ingestion verification: Status is COMPLETED")
+                    
+                    # Log metrics
+                    metrics = service.get_ingestion_metrics()
+                    if metrics.get('entity_counts'):
+                        logger.info("Entity counts:")
+                        for class_name, count in metrics['entity_counts'].items():
+                            if count > 0:
+                                logger.info(f"  • {class_name}: {count}")
+                    
+                    return 0
+                else:
+                    logger.error("Post-ingestion verification failed:")
+                    for error in verification.errors:
+                        logger.error(f"  • {error}")
+                    return 3  # Verification failed
+            else:
+                logger.error("Ingestion failed:")
+                for error in result.errors:
+                    logger.error(f"  • {error}")
+                return 3  # Ingestion failed
             
     except Exception as e:
-        log_error(logger, e, {'operation': 'main'})
-        return 2
+        log_error(logger, e, {'operation': 'main', 'config_path': config_path, 'profile': profile})
+        return 2  # General error
+    finally:
+        if service is not None:
+            service.close()
+
 
 if __name__ == "__main__":
-    # Parse command line arguments
+    # Parse command line arguments (same interface as before)
     config_path = "config/weaviate_config.yaml"
     profile = "default"
     
@@ -143,10 +151,10 @@ if __name__ == "__main__":
         config_path = sys.argv[1]
     if len(sys.argv) > 2:
         profile = sys.argv[2]
-        
+    
     exit_code = main(config_path, profile)
     
-    # Handle retry logic for in-progress ingestion
+    # Handle retry logic for in-progress ingestion (same logic as before)
     if exit_code == 1:
         logger.info("Waiting for in-progress ingestion...")
         time.sleep(30)

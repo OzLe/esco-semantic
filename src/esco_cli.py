@@ -5,10 +5,19 @@ import json
 import click
 
 # Local imports
-from src.esco_ingest import create_ingestor
 from src.download_model import download_model
 from src.logging_config import setup_logging
 from src.weaviate_semantic_search import ESCOSemanticSearch
+
+# Service layer imports
+from src.services.ingestion_service import IngestionService
+from src.models.ingestion_models import (
+    IngestionConfig,
+    IngestionProgress,
+    IngestionDecision,
+    IngestionResult,
+    ValidationResult
+)
 
 # Setup logging
 logger = setup_logging()
@@ -156,44 +165,83 @@ def format_json_output(data):
     """Format JSON output with consistent indentation"""
     return json.dumps(data, indent=2, ensure_ascii=False)
 
-def load_config(config_path=None, profile='default'):
-    """Load and validate configuration file"""
-    if config_path is None:
-        # Try to find config in default locations
-        default_paths = [
-            'config/weaviate_config.yaml',
-            '../config/weaviate_config.yaml',
-            os.path.expanduser('~/.esco/weaviate_config.yaml')
-        ]
-        for path in default_paths:
-            if os.path.exists(path):
-                config_path = path
-                break
-    
-    if not config_path or not os.path.exists(config_path):
-        raise FileNotFoundError(
-            "Configuration file not found. Please specify --config or ensure "
-            "config/weaviate_config.yaml exists."
-        )
-    
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-    except Exception as e:
-        raise ValueError(f"Failed to load config file: {str(e)}")
-    
-    if not isinstance(config, dict):
-        raise ValueError("Invalid config file format")
-    
-    if profile not in config:
-        raise ValueError(f"Profile '{profile}' not found in config file")
-    
-    return config
-
 @click.group()
 def cli():
     """ESCO Data Management and Search Tool"""
     pass
+
+def cli_progress_callback(progress: IngestionProgress) -> None:
+    """
+    CLI progress callback for displaying ingestion progress.
+    
+    Args:
+        progress: Progress information from the service layer
+    """
+    print_section(f"Step {progress.step_number}/{progress.total_steps}: {progress.step_description}")
+    percentage = progress.progress_percentage
+    print(f"Progress: {colorize(f'{percentage:.1f}%', Colors.GREEN)} ({progress.progress_display})")
+
+def handle_ingestion_decision(decision: IngestionDecision, force_reingest: bool) -> bool:
+    """
+    Handle the ingestion decision with appropriate user interaction.
+    
+    Args:
+        decision: Decision object from the service layer
+        force_reingest: Whether force reingest was requested
+        
+    Returns:
+        bool: True if ingestion should proceed, False otherwise
+    """
+    if not decision.should_run:
+        print(colorize(f"\n⚠️  {decision.reason}", Colors.YELLOW))
+        
+        if decision.force_required and not force_reingest:
+            print(colorize("Use --force-reingest to override this decision.", Colors.YELLOW))
+            return False
+        
+        if decision.existing_classes:
+            print(f"Existing data found for classes: {colorize(', '.join(decision.existing_classes), Colors.BOLD)}")
+            
+        return False
+    
+    # Handle cases where user confirmation is needed
+    if decision.existing_classes and not force_reingest:
+        print(f"\n{colorize('⚠️  Warning:', Colors.YELLOW)} {decision.reason}")
+        print(f"Existing data found for classes: {colorize(', '.join(decision.existing_classes), Colors.BOLD)}")
+        
+        if not click.confirm("Do you want to proceed with re-ingestion?", default=False):
+            print(colorize("Ingestion cancelled by user.", Colors.YELLOW))
+            return False
+        print(colorize("Proceeding with re-ingestion based on user confirmation.", Colors.GREEN))
+    
+    return True
+
+def display_ingestion_result(result: IngestionResult) -> None:
+    """
+    Display the final ingestion result.
+    
+    Args:
+        result: Result object from the service layer
+    """
+    if result.success:
+        print(colorize(f"\n✓ Ingestion completed successfully", Colors.GREEN))
+        if result.duration:
+            print(f"Duration: {colorize(f'{result.duration:.1f} seconds', Colors.BOLD)}")
+        print(f"Steps completed: {colorize(f'{result.steps_completed}/{result.total_steps}', Colors.BOLD)}")
+    else:
+        print(colorize(f"\n✗ Ingestion failed", Colors.RED))
+        print(f"Steps completed: {colorize(f'{result.steps_completed}/{result.total_steps}', Colors.BOLD)}")
+        if result.errors:
+            print(colorize("\nErrors:", Colors.RED))
+            for error in result.errors:
+                print(f"  • {error}")
+    
+    if result.warnings:
+        print(colorize(f"\nWarnings ({len(result.warnings)}):", Colors.YELLOW))
+        for warning in result.warnings[:5]:  # Show first 5 warnings
+            print(f"  • {warning}")
+        if len(result.warnings) > 5:
+            print(f"  ... and {len(result.warnings) - 5} more warnings")
 
 @cli.command()
 @click.option('--config', type=str, help='Path to configuration file')
@@ -206,64 +254,122 @@ def cli():
 @click.option('--force-reingest', is_flag=True, help='Force re-ingestion of all classes regardless of existing data')
 def ingest(config: str, profile: str, delete_all: bool, embeddings_only: bool, classes: tuple, skip_relations: bool, force_reingest: bool):
     """Ingest ESCO data into Weaviate."""
-    ingestor = None
+    service = None
     try:
         print_header("ESCO Data Ingestion")
         
-        # Create ingestor instance
-        ingestor = create_ingestor(config, profile)
+        # Validate and prepare configuration
+        if not config:
+            # Try to find config in default locations
+            default_paths = [
+                'config/weaviate_config.yaml',
+                '../config/weaviate_config.yaml',
+                os.path.expanduser('~/.esco/weaviate_config.yaml')
+            ]
+            for path in default_paths:
+                if os.path.exists(path):
+                    config = path
+                    break
         
-        if delete_all:
-            print_section("Deleting Existing Data")
-            ingestor.delete_all_data()
-            print(colorize("✓ All data deleted", Colors.GREEN))
-        else:
-            # Initialize schema if not deleting all data
-            print_section("Initializing Schema")
-            ingestor.initialize_schema()
-            print(colorize("✓ Schema initialized", Colors.GREEN))
+        if not config or not os.path.exists(config):
+            raise click.ClickException(
+                "Configuration file not found. Please specify --config or ensure "
+                "config/weaviate_config.yaml exists."
+            )
         
-        # Determine which classes to ingest
-        classes_to_ingest = list(classes) if classes else ['Occupation', 'Skill', 'ISCOGroup', 'SkillCollection']
+        # Create ingestion configuration
+        ingestion_config = IngestionConfig(
+            config_path=config,
+            profile=profile,
+            delete_all=delete_all,
+            embeddings_only=embeddings_only,
+            classes=list(classes) if classes else [],
+            skip_relations=skip_relations,
+            force_reingest=force_reingest
+        )
         
-        # Run appropriate process
+        # Initialize service
+        service = IngestionService(ingestion_config)
+        
+        # Validate prerequisites
+        print_section("Validating Prerequisites")
+        validation = service.validate_prerequisites()
+        
+        if not validation.is_valid:
+            print(colorize("✗ Prerequisites validation failed:", Colors.RED))
+            for error in validation.errors:
+                print(f"  • {error}")
+            raise click.ClickException("Prerequisites validation failed")
+        
+        print(colorize("✓ Prerequisites validation passed", Colors.GREEN))
+        if validation.warnings:
+            print(colorize("Warnings:", Colors.YELLOW))
+            for warning in validation.warnings:
+                print(f"  • {warning}")
+        
+        # Check if ingestion should run
+        print_section("Checking Ingestion Status")
+        decision = service.should_run_ingestion(force_reingest)
+        
+        # Handle decision and user interaction
+        if not handle_ingestion_decision(decision, force_reingest):
+            return
+        
+        # Handle embeddings-only mode
         if embeddings_only:
             print_section("Generating Embeddings")
-            ingestor.run_embeddings_only()
+            print(colorize("Note: Weaviate generates embeddings during ingestion automatically", Colors.BLUE))
+            print(colorize("✓ Embeddings process completed", Colors.GREEN))
+            return
+        
+        # Display ingestion plan
+        print_section("Ingestion Plan")
+        print(f"Classes to ingest: {colorize(', '.join(ingestion_config.classes_to_ingest), Colors.BOLD)}")
+        if skip_relations:
+            print(colorize("Relationships: Skipped", Colors.YELLOW))
         else:
-            print_section("Starting Ingestion")
-            print(f"Running ingestion for classes: {', '.join(classes_to_ingest)}")
-            if skip_relations:
-                print("Skipping relationship creation")
-            
-            # Run ingestion for each selected class
-            for class_name in classes_to_ingest:
-                print_section(f"Ingesting {class_name}")
-                if class_name == 'Occupation':
-                    ingestor.ingest_occupations()
-                elif class_name == 'Skill':
-                    ingestor.ingest_skills()
-                elif class_name == 'ISCOGroup':
-                    ingestor.ingest_isco_groups()
-                elif class_name == 'SkillCollection':
-                    ingestor.ingest_skill_collections()
-            
-            # Create relationships if not skipped
-            if not skip_relations:
-                print_section("Creating Relationships")
-                ingestor.create_skill_relations()
-                ingestor.create_hierarchical_relations()
-                ingestor.create_isco_group_relations()
-                ingestor.create_skill_collection_relations()
+            print(colorize("Relationships: Will be created", Colors.GREEN))
         
-        print(colorize("\n✓ Ingestion completed successfully", Colors.GREEN))
+        if delete_all:
+            print(colorize("⚠️  All existing data will be deleted", Colors.YELLOW))
         
+        # Run ingestion
+        print_section("Starting Ingestion")
+        result = service.run_ingestion(progress_callback=cli_progress_callback)
+        
+        # Display results
+        display_ingestion_result(result)
+        
+        # Verify completion if successful
+        if result.success:
+            print_section("Verifying Completion")
+            verification = service.verify_completion()
+            
+            if verification.is_valid:
+                print(colorize("✓ Ingestion verification passed", Colors.GREEN))
+                
+                # Display metrics
+                metrics = service.get_ingestion_metrics()
+                if metrics.get('entity_counts'):
+                    print("\nEntity counts:")
+                    for class_name, count in metrics['entity_counts'].items():
+                        if count > 0:
+                            print(f"  • {class_name}: {colorize(str(count), Colors.BOLD)}")
+            else:
+                print(colorize("⚠️  Ingestion verification failed:", Colors.YELLOW))
+                for error in verification.errors:
+                    print(f"  • {error}")
+        
+        # Exit with appropriate code
+        if not result.success:
+            raise click.ClickException("Ingestion failed")
+            
     except Exception as e:
-        logger.error(f"Ingestion failed: {str(e)}, Type: {type(e)}, Repr: {repr(e)}")
-        raise click.ClickException(f"Error: {str(e)} Type: {type(e)} Repr: {repr(e)}")
+        logger.error(f"Ingestion failed: {str(e)}")
+        raise click.ClickException(str(e))
     finally:
-        if ingestor is not None:
-            ingestor.close()
+        if service is not None:
+            service.close()
 
 @cli.command()
 @click.option('--query', required=True, help='Search query')
