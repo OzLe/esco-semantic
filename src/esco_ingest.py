@@ -6,11 +6,14 @@ import yaml
 from abc import ABC, abstractmethod
 import numpy as np
 import click
+from datetime import datetime
+import sys
 
 # Local imports
 from src.esco_weaviate_client import WeaviateClient
 from src.embedding_utils import ESCOEmbedding
 from src.logging_config import setup_logging
+from src.weaviate_semantic_search import ESCOSemanticSearch
 
 # ESCO v1.2.0 (English) – CSV classification import for Weaviate
 # Oz Levi
@@ -314,7 +317,7 @@ class WeaviateIngestor(BaseIngestor):
             if groups_to_import and group_vectors:
                 logger.info(f"Starting batch import of {len(groups_to_import)} ISCO groups")
                 try:
-                    self.isco_group_repo.batch_import(groups_to_import, group_vectors)
+                    self.isco_group_repo.batch_upsert(groups_to_import, group_vectors)
                     logger.info(f"Successfully ingested {len(groups_to_import)} ISCO groups into Weaviate")
                 except Exception as e:
                     failed_imports = len(groups_to_import)
@@ -421,7 +424,7 @@ class WeaviateIngestor(BaseIngestor):
             if occupations_to_import and occupation_vectors:
                 logger.info(f"Starting batch import of {len(occupations_to_import)} occupations")
                 try:
-                    self.occupation_repo.batch_import(occupations_to_import, occupation_vectors)
+                    self.occupation_repo.batch_upsert(occupations_to_import, occupation_vectors)
                     logger.info(f"Successfully ingested {len(occupations_to_import)} occupations into Weaviate")
                 except Exception as e:
                     failed_imports = len(occupations_to_import)
@@ -538,7 +541,7 @@ class WeaviateIngestor(BaseIngestor):
             if skills_to_import and skill_vectors:
                 logger.info(f"Starting batch import of {len(skills_to_import)} skills")
                 try:
-                    self.skill_repo.batch_import(skills_to_import, skill_vectors)
+                    self.skill_repo.batch_upsert(skills_to_import, skill_vectors)
                     logger.info(f"Successfully ingested {len(skills_to_import)} skills into Weaviate")
                 except Exception as e:
                     failed_imports = len(skills_to_import)
@@ -780,7 +783,7 @@ class WeaviateIngestor(BaseIngestor):
             if groups_to_import and group_vectors:
                 logger.info(f"Starting batch import of {len(groups_to_import)} skill groups")
                 try:
-                    self.skill_group_repo.batch_import(groups_to_import, group_vectors)
+                    self.skill_group_repo.batch_upsert(groups_to_import, group_vectors)
                     logger.info(f"Successfully ingested {len(groups_to_import)} skill groups into Weaviate")
                 except Exception as e:
                     failed_imports = len(groups_to_import)
@@ -885,7 +888,7 @@ class WeaviateIngestor(BaseIngestor):
             if collections_to_import and collection_vectors:
                 logger.info(f"Starting batch import of {len(collections_to_import)} skill collections")
                 try:
-                    self.skill_collection_repo.batch_import(collections_to_import, collection_vectors)
+                    self.skill_collection_repo.batch_upsert(collections_to_import, collection_vectors)
                     logger.info(f"Successfully ingested {len(collections_to_import)} skill collections into Weaviate")
                 except Exception as e:
                     failed_imports = len(collections_to_import)
@@ -926,14 +929,30 @@ class WeaviateIngestor(BaseIngestor):
             logger.info(f"Processing skill collection relations from {file_path}")
             df = pd.read_csv(file_path)
             
-            # **FIX 1: Standardize column names**
-            df = self._standardize_collection_relation_columns(df)
-            
-            # **FIX 2: Use standardized column names**
-            if 'conceptSchemeUri' not in df.columns or 'skillUri' not in df.columns:
-                logger.error(f"Collection file {collection_file} missing required columns after standardization. "
-                            f"Available columns: {list(df.columns)}. Skipping.")
-                continue
+            # Special handling for languageSkillsCollection_en.csv which has a different format
+            if collection_file == 'languageSkillsCollection_en.csv':
+                if 'conceptUri' not in df.columns:
+                    logger.error(f"Language skills collection file missing required column 'conceptUri'. "
+                               f"Available columns: {list(df.columns)}. Skipping.")
+                    continue
+                    
+                # For language skills, we'll use a fixed collection URI
+                language_collection_uri = "http://data.europa.eu/esco/concept-scheme/language-skills"
+                
+                # Create a standardized DataFrame with the expected columns
+                df = pd.DataFrame({
+                    'conceptSchemeUri': [language_collection_uri] * len(df),
+                    'skillUri': df['conceptUri']
+                })
+            else:
+                # For other collection files, use the standard column standardization
+                df = self._standardize_collection_relation_columns(df)
+                
+                # Check required columns
+                if 'conceptSchemeUri' not in df.columns or 'skillUri' not in df.columns:
+                    logger.error(f"Collection file {collection_file} missing required columns after standardization. "
+                               f"Available columns: {list(df.columns)}. Skipping.")
+                    continue
 
             # Clean NaNs and drop invalid rows
             df[['conceptSchemeUri', 'skillUri']] = df[['conceptSchemeUri', 'skillUri']].fillna('')
@@ -1105,84 +1124,121 @@ class WeaviateIngestor(BaseIngestor):
                 pbar.update(1)
 
     def run_ingest(self, force_reingest: bool = False):
-        """Run the complete Weaviate ingestion process"""
+        """Run the complete Weaviate ingestion process with state tracking"""
+        current_step = "initialization"
         try:
-            # Create a progress bar for the overall process
-            with tqdm(total=11, desc="ESCO Ingestion Progress", unit="step",
-                     bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
-                
-                # Step 1: Initialize schema or delete all data if force_reingest
-                if force_reingest:
-                    self.delete_all_data()
-                else:
-                    self.initialize_schema()
-                pbar.update(1)
-                
-                # Check for existing data and handle re-ingestion
-                if not force_reingest:
-                    existing_classes = []
-                    for class_name in ["ISCOGroup", "Occupation", "Skill", "SkillCollection", "SkillGroup"]:
-                        if self.check_class_exists(class_name):
-                            existing_classes.append(class_name)
-                    
-                    if existing_classes:
-                        logger.warning(f"Found existing data for classes: {', '.join(existing_classes)}")
-                        if not click.confirm("Do you want to re-ingest these classes?", default=False):
-                            logger.info("Skipping re-ingestion of existing classes")
-                            # Skip the ingestion steps for existing classes
-                            for class_name in existing_classes:
-                                if class_name in ["ISCOGroup", "Occupation", "Skill", "SkillCollection", "SkillGroup"]:
-                                     pbar.update(1) # only update for main entity types
+            # Check current ingestion status
+            status_data = self.client.get_ingestion_status()
+            logger.info(f"Initial ingestion status: {status_data.get('status')}")
+
+            if status_data.get("status") == "completed" and not force_reingest:
+                logger.info("Ingestion already completed. Use --force-reingest to re-run.")
+                return
+            
+            if status_data.get("status") == "in_progress" and not force_reingest: # Only check staleness if not forcing re-ingest
+                logger.warning("Ingestion reported as 'in_progress'. Checking if stale...")
+                timestamp_str = status_data.get("timestamp")
+                if timestamp_str:
+                    try:
+                        ingestion_time = datetime.fromisoformat(timestamp_str)
+                        # Check if ingestion is stale (e.g., > 1 hour old)
+                        if (datetime.utcnow() - ingestion_time).total_seconds() < 3600:
+                            logger.error("Ingestion is currently marked 'in_progress' and is not stale. Exiting to prevent overlap.")
                             return
+                        logger.info("Stale 'in_progress' ingestion detected, proceeding with new ingestion.")
+                    except ValueError:
+                        logger.warning(f"Could not parse timestamp '{timestamp_str}' for 'in_progress' status. Assuming stale and proceeding.")
+                else:
+                    logger.info("'in_progress' status found without a timestamp. Assuming stale and proceeding.")
+            
+            # Non-interactive mode check (existing logic, slightly adapted position)
+            if not force_reingest: # This check is only relevant if not forcing
+                existing_classes = []
+                for class_name_check in ["Skill", "Occupation", "ISCOGroup", "SkillCollection", "SkillGroup"]:
+                    if self.check_class_exists(class_name_check):
+                        existing_classes.append(class_name_check)
                 
-                # Step 2: Ingest ISCO groups if not exists or force_reingest
-                if force_reingest or not self.check_class_exists("ISCOGroup"):
-                    self.ingest_isco_groups()
-                pbar.update(1)
-                
-                # Step 3: Ingest occupations if not exists or force_reingest
-                if force_reingest or not self.check_class_exists("Occupation"):
-                    self.ingest_occupations()
-                pbar.update(1)
-                
-                # Step 4: Ingest skills if not exists or force_reingest
-                if force_reingest or not self.check_class_exists("Skill"):
-                    self.ingest_skills()
-                pbar.update(1)
-                
-                # Step 5: Ingest skill collections if not exists or force_reingest
-                if force_reingest or not self.check_class_exists("SkillCollection"):
-                    self.ingest_skill_collections()
-                pbar.update(1)
+                if existing_classes:
+                    is_docker = os.getenv('DOCKER_ENV') == 'true'
+                    is_non_interactive = not sys.stdin.isatty() or os.getenv('NON_INTERACTIVE') == 'true'
+                    if is_docker or is_non_interactive:
+                        logger.info(f"Non-interactive mode. Found existing data for classes: {', '.join(existing_classes)}.")
+                        logger.info("Skipping re-ingestion. Use --force-reingest to override.")
+                        return
+                    # Interactive prompt (existing logic)
+                    if not click.confirm(f"Found existing data for classes: {', '.join(existing_classes)}. Do you want to re-ingest these classes?", default=False):
+                        logger.info("Skipping re-ingestion of existing classes based on user input.")
+                        return
+                    logger.info("Proceeding with re-ingestion based on user confirmation.")
 
-                # Step 6: Ingest skill groups if not exists or force_reingest
-                if force_reingest or not self.check_class_exists("SkillGroup"):
-                    self.ingest_skill_groups()
-                pbar.update(1)
-                
-                # Step 7: Create occupation skill relations
-                self.create_skill_relations() # This links Occupations to Skills
-                pbar.update(1)
-                
-                # Step 8: Create hierarchical relations (Occupations and Skills)
-                self.create_hierarchical_relations()
-                pbar.update(1)
+            total_steps = 12 # Number of major ingestion/relation steps
 
-                # Step 9: Create ISCO group relations (Occupation to ISCOGroup)
-                self.create_isco_group_relations()
-                pbar.update(1)
-                
-                # Step 10: Create skill collection relations (SkillCollection to Skill)
-                self.create_skill_collection_relations()
-                pbar.update(1)
+            current_step = "starting_ingestion"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"0/{total_steps}"})
+            
+            current_step = "schema_initialization"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"1/{total_steps}"})
+            self.initialize_schema()
+            
+            current_step = "isco_groups_ingestion"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"2/{total_steps}"})
+            self.ingest_isco_groups()
+            
+            current_step = "occupations_ingestion"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"3/{total_steps}"})
+            self.ingest_occupations()
+            
+            current_step = "skills_ingestion"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"4/{total_steps}"})
+            self.ingest_skills()
 
-                # Step 11: Create skill-to-skill relations
-                self.create_skill_skill_relations()
-                pbar.update(1)
-                
-            logger.info("ESCO data ingestion into Weaviate completed successfully")
+            current_step = "skill_groups_ingestion"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"5/{total_steps}"})
+            self.ingest_skill_groups()
+
+            current_step = "skill_collections_ingestion"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"6/{total_steps}"})
+            self.ingest_skill_collections()
+            
+            current_step = "occupation_skill_relations_creation"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"7/{total_steps}"})
+            self.create_skill_relations() # Occupation-skill relations
+            
+            current_step = "hierarchical_relations_creation"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"8/{total_steps}"})
+            self.create_hierarchical_relations()
+            
+            current_step = "isco_group_relations_creation"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"9/{total_steps}"})
+            self.create_isco_group_relations()
+
+            current_step = "skill_collection_relations_creation"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"10/{total_steps}"})
+            self.create_skill_collection_relations()
+
+            current_step = "skill_to_skill_relations_creation"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"11/{total_steps}"})
+            self.create_skill_skill_relations()
+
+            current_step = "broader_skill_relations_creation"
+            self.client.set_ingestion_metadata(status="in_progress", details={"step": current_step, "progress": f"12/{total_steps}"})
+            self.create_broader_skill_relations()
+            
+            final_details = {
+                "last_completed_step": current_step,
+                "progress": f"{total_steps}/{total_steps}",
+                "completion_time": datetime.utcnow().isoformat(),
+                # Add placeholders for counts, actual counts would require modifying ingest methods
+                "counts": {
+                    "info": "Counts for ingested items are placeholders."
+                }
+            }
+            self.client.set_ingestion_metadata(status="completed", details=final_details)
+            logger.info(f"Ingestion completed successfully. Details: {final_details}")
+            
         except Exception as e:
-            logger.error(f"Error during Weaviate ingestion: {str(e)}")
+            logger.error(f"Ingestion failed at step '{current_step}': {str(e)}", exc_info=True)
+            self.client.set_ingestion_metadata(status="failed", details={"error": str(e), "step": current_step, "timestamp": datetime.utcnow().isoformat()})
             raise
 
     def run_embeddings_only(self):

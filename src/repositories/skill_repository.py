@@ -74,7 +74,7 @@ class SkillRepository(WeaviateRepository):
             self.logger.error(f"Failed to add skill-to-skill relation between {from_skill_uri} and {to_skill_uri}: {str(e)}")
             return False
     
-    def add_hierarchical_relation(self, broader_uri: str, narrower_uri: str) -> bool:
+    def add_hierarchical_relation(self, broader_uri: str, narrower_uri: str, relation_type: str = "Skill") -> bool:
         """Add hierarchical relation between broader and narrower skills."""
         try:
             # Get the broader skill ID

@@ -1,0 +1,20 @@
+class: Metadata
+vectorizer: none
+properties:
+  - name: metaType
+    dataType: [string]
+    isIndexed: true
+    tokenization: word
+  - name: status
+    dataType: [string]
+    isIndexed: true
+    tokenization: word
+  - name: timestamp
+    dataType: [date]
+    isIndexed: true
+  - name: version
+    dataType: [string]
+    isIndexed: false
+  - name: details
+    dataType: [text]
+    isIndexed: false 

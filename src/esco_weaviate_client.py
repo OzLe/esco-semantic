@@ -8,6 +8,8 @@ from weaviate.exceptions import UnexpectedStatusCodeException
 from .exceptions import WeaviateError, ConfigurationError
 from .logging_config import log_error
 from .repositories.repository_factory import RepositoryFactory
+import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +102,9 @@ class WeaviateClient:
 
     def _load_schema_file(self, schema_name: str) -> Dict:
         """Load a schema file from the resources directory."""
-        schema_path = Path("resources/schemas") / f"{schema_name}.yaml"
+        # Get the absolute path to the project root directory
+        project_root = Path(__file__).parent.parent
+        schema_path = project_root / "resources" / "schemas" / f"{schema_name}.yaml"
         try:
             with open(schema_path, 'r') as f:
                 schema = yaml.safe_load(f)
@@ -139,7 +143,8 @@ class WeaviateClient:
                     "Skill": self._load_schema_file("skill"),
                     "SkillCollection": self._load_schema_file("skill_collection"),
                     "Occupation": self._load_schema_file("occupation"),
-                    "SkillGroup": self._load_schema_file("skill_group")
+                    "SkillGroup": self._load_schema_file("skill_group"),
+                    "Metadata": self._load_schema_file("metadata")  # Add Metadata class
                 }
 
                 # Create base collections first
@@ -375,6 +380,50 @@ class WeaviateClient:
         return skill_repo.add_skill_to_skill_relation(from_skill_uri, to_skill_uri, relation_type)
 
     def add_broader_skill_relation(self, skill_uri: str, broader_uri: str) -> bool:
-        """Add broader skill relation."""
+        """Add a broader skill relation."""
         skill_repo = self.get_repository("Skill")
-        return skill_repo.add_hierarchical_relation(broader_uri, skill_uri) 
+        return skill_repo.add_hierarchical_relation(broader_uri, skill_uri)
+
+    def set_ingestion_metadata(self, status: str, details: dict = None):
+        """Store ingestion metadata in Weaviate"""
+        try:
+            # Create a special metadata object
+            metadata = {
+                "metaType": "ingestion_status",
+                "status": status,  # "in_progress", "completed", "failed"
+                "timestamp": datetime.utcnow().isoformat(),
+                "version": "1.0",
+                "details": json.dumps(details or {})
+            }
+            
+            # Store in a special Metadata class
+            self.client.data_object.create(
+                class_name="Metadata",
+                data_object=metadata
+            )
+            logger.info(f"Set ingestion status to: {status}")
+        except Exception as e:
+            logger.error(f"Failed to set ingestion metadata: {str(e)}")
+
+    def get_ingestion_status(self) -> dict:
+        """Check if ingestion was completed successfully"""
+        try:
+            result = (
+                self.client.query
+                .get("Metadata", ["metaType", "status", "timestamp", "details"])
+                .with_where({
+                    "path": ["metaType"],
+                    "operator": "Equal",
+                    "valueString": "ingestion_status"
+                })
+                .with_sort({"path": ["timestamp"], "order": "desc"})
+                .with_limit(1)
+                .do()
+            )
+            
+            if result["data"]["Get"]["Metadata"]:
+                return result["data"]["Get"]["Metadata"][0]
+            return {"status": "not_started"}
+        except Exception as e:
+            logger.error(f"Failed to get ingestion status: {str(e)}")
+            return {"status": "unknown", "error": str(e)} 

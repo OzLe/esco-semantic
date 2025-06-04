@@ -33,19 +33,22 @@ class WeaviateRepository(BaseRepository):
             raise WeaviateError(f"Failed to create {self.class_name}: {str(e)}")
     
     def get_by_uri(self, uri: str) -> Optional[Dict[str, Any]]:
-        """Get an entity by its URI from Weaviate."""
+        """Get an entity by its URI from Weaviate, including its ID."""
         try:
-            result = (
+            query = (
                 self.client.client.query
-                .get(self.class_name)
+                .get(self.class_name) # Get all properties
+                .with_additional(["id"]) # Explicitly ask for ID
                 .with_where({
                     "path": ["conceptUri"],
                     "operator": "Equal",
                     "valueString": uri
                 })
-                .do()
+                .with_limit(1) # Ensure only one result
             )
-            items = result["data"]["Get"][self.class_name]
+            result = query.do()
+            
+            items = result.get("data", {}).get("Get", {}).get(self.class_name)
             return items[0] if items else None
         except Exception as e:
             logger.error(f"Failed to get {self.class_name} by URI {uri}: {str(e)}")
@@ -313,4 +316,47 @@ class WeaviateRepository(BaseRepository):
             return True
         except Exception as e:
             logger.error(f"Failed to add skill-to-skill relation: {str(e)}")
-            return False 
+            return False
+
+    def upsert(self, data: Dict[str, Any], vector: Optional[List[float]] = None) -> str:
+        """Create or update an entity based on conceptUri"""
+        try:
+            # Check if object exists
+            existing_object = self.get_by_uri(data.get('conceptUri'))
+            
+            if existing_object:
+                # Update existing object
+                object_id = existing_object.get('_additional', {}).get('id')
+                if object_id:
+                    # Preserve the conceptUri in the update
+                    update_data = {k: v for k, v in data.items() if k != 'conceptUri'}
+                    self.client.client.data_object.update(
+                        class_name=self.class_name,
+                        uuid=object_id,
+                        data_object=update_data
+                        # Vector is not typically updated directly this way with Weaviate's standard update.
+                        # If vector update is needed, object might need to be re-created or specific vector update API used.
+                    )
+                    logger.debug(f"Updated existing {self.class_name}: {data.get('conceptUri')}")
+                    return object_id
+            
+            # Create new object if not existing or if update failed to find ID
+            logger.debug(f"Creating new {self.class_name}: {data.get('conceptUri')}")
+            return self.create(data, vector)
+        except Exception as e:
+            logger.error(f"Failed to upsert {self.class_name} for URI {data.get('conceptUri')}: {str(e)}")
+            raise WeaviateError(f"Failed to upsert {self.class_name} for URI {data.get('conceptUri')}: {str(e)}")
+
+    def batch_upsert(self, data_list: List[Dict[str, Any]], vectors: List[np.ndarray]) -> List[Optional[str]]:
+        """Batch upsert operation"""
+        results = []
+        for data_item, vector_item in zip(data_list, vectors):
+            try:
+                # Convert numpy array to list if necessary for the upsert method
+                vector_list = vector_item.tolist() if isinstance(vector_item, np.ndarray) else vector_item
+                result_id = self.upsert(data_item, vector_list)
+                results.append(result_id)
+            except Exception as e: # Catching broad exception from upsert
+                logger.error(f"Failed to upsert item {data_item.get('conceptUri', 'Unknown URI')} in batch: {str(e)}")
+                results.append(None) # Append None or some indicator of failure for this item
+        return results 

@@ -6,6 +6,7 @@ from src.logging_config import setup_logging
 from src.esco_weaviate_client import WeaviateClient
 import torch
 import numpy as np
+import json
 
 logger = setup_logging()
 
@@ -119,8 +120,9 @@ class ESCOSemanticSearch:
         return "cpu"
 
     def validate_data(self) -> Tuple[bool, Dict[str, Any]]:
-        """Validate the data in the Weaviate database"""
+        """Validate the data in the Weaviate database including ingestion status"""
         validation_details = {
+            "ingestion_status": "unknown",
             "skills_indexed": False,
             "occupations_indexed": False,
             "isco_groups_indexed": False,
@@ -131,6 +133,29 @@ class ESCOSemanticSearch:
         }
         
         try:
+            # Check ingestion status first
+            status = self.client.get_ingestion_status()
+            validation_details["ingestion_status"] = status.get("status", "unknown")
+            
+            if status.get("status") != "completed":
+                error_message = f"Ingestion not completed: status is '{status.get('status')}'."
+                # Attempt to parse details if they are a JSON string, or use as is if dict/str
+                status_details = status.get("details")
+                if status_details:
+                    if isinstance(status_details, str):
+                        try:
+                            parsed_details = json.loads(status_details)
+                            error_message += f" Details: {json.dumps(parsed_details)}" # Re-serialize for consistent string format
+                        except json.JSONDecodeError:
+                            error_message += f" Details (raw string): {status_details}"
+                    elif isinstance(status_details, dict):
+                        error_message += f" Details: {json.dumps(status_details)}" # Serialize dict for consistent string format
+                    else:
+                        error_message += f" Details (unknown type): {str(status_details)}"
+                        
+                validation_details["errors"].append(error_message)
+                return False, validation_details
+            
             # Check each entity type
             for entity_type in ["Skill", "Occupation", "ISCOGroup"]:
                 try:
