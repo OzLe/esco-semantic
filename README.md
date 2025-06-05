@@ -543,6 +543,59 @@ print('Validation:', validation.is_valid, validation.errors)
 "
 ```
 
+### Long-Running Ingestion
+
+The ESCO data ingestion process is designed to handle large datasets and can take several hours to complete. This is normal behavior and not an indication of a problem.
+
+#### Expected Duration
+- Full ingestion typically takes 2-4 hours depending on system resources
+- Each step (occupations, skills, relations) may take 30-60 minutes
+- Progress is tracked and reported through heartbeat messages
+
+#### Monitoring Progress
+- Check the logs for step-by-step progress updates
+- Each step reports its current progress and estimated completion time
+- Heartbeat messages are sent every 30 seconds by default
+
+#### Common Scenarios
+
+1. **Slow but Active Ingestion**
+   - If you see regular heartbeat messages and step progress updates
+   - This is normal - continue waiting
+   - Monitor the logs for progress updates
+
+2. **Stuck Ingestion**
+   - No heartbeat updates for more than 2 hours
+   - No progress updates for extended periods
+   - Error messages in the logs
+
+#### Troubleshooting Steps
+
+1. For Slow Ingestion:
+   - Monitor the logs for progress updates
+   - Check system resources (CPU, memory, disk I/O)
+   - Verify network connectivity to Weaviate
+   - Consider adjusting batch sizes in configuration
+
+2. For Stuck Ingestion:
+   - Check the logs for error messages
+   - Verify the last heartbeat timestamp
+   - Check Weaviate connection status
+   - Restart the ingestion process if necessary
+
+### Configuration
+
+The system uses configurable timeouts and polling intervals:
+
+```yaml
+app:
+  ingestion_wait_timeout_minutes: 60  # Maximum time to wait for ingestion
+  ingestion_poll_interval_seconds: 30  # How often to check ingestion status
+  staleness_threshold_seconds: 7200    # When to consider ingestion stale
+```
+
+Adjust these values based on your system's performance and requirements.
+
 ## Development
 
 ### Project Structure

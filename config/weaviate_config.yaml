@@ -16,6 +16,10 @@ default:
     log_dir: "logs"
     log_level: "INFO"
     python_unbuffered: true
+    staleness_threshold_seconds: 7200
+    stale_timeout_hours: 2
+    ingestion_wait_timeout_minutes: 60
+    ingestion_poll_interval_seconds: 30
 
   # Model settings
   model:
@@ -48,6 +52,10 @@ cloud:
     log_dir: "logs"
     log_level: "INFO"
     python_unbuffered: true
+    staleness_threshold_seconds: 7200
+    stale_timeout_hours: 2
+    ingestion_wait_timeout_minutes: 60
+    ingestion_poll_interval_seconds: 30
 
   # Model settings
   model:

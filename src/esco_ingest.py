@@ -60,10 +60,18 @@ class BaseIngestor(ABC):
         """Delete all data from the database"""
         pass
 
-    def process_csv_in_batches(self, file_path, process_func):
-        """Process a CSV file in batches"""
+    def process_csv_in_batches(self, file_path, process_func, heartbeat_callback=None):
+        """
+        Process a CSV file in batches with optional heartbeat updates.
+        
+        Args:
+            file_path: Path to the CSV file
+            process_func: Function to process each batch
+            heartbeat_callback: Optional callback function for heartbeat updates
+        """
         df = pd.read_csv(file_path)
         total_rows = len(df)
+        rows_processed = 0
         
         with tqdm(total=total_rows, desc=f"Processing {os.path.basename(file_path)}", unit="rows",
                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
@@ -71,7 +79,12 @@ class BaseIngestor(ABC):
                 end_idx = min(start_idx + self.batch_size, total_rows)
                 batch = df.iloc[start_idx:end_idx]
                 process_func(batch)
+                rows_processed += len(batch)
                 pbar.update(len(batch))
+                
+                # Send heartbeat every 1000 rows
+                if heartbeat_callback and rows_processed % 1000 == 0:
+                    heartbeat_callback(rows_processed, total_rows)
 
     @abstractmethod
     def run_simple_ingestion(self):
@@ -287,94 +300,81 @@ class WeaviateIngestor(BaseIngestor):
         logger.info("ISCO group ingestion completed")
 
     def ingest_occupations(self):
-        """Ingest occupations into Weaviate"""
-        file_path = os.path.join(self.esco_dir, "occupations_en.csv")
-        if not os.path.exists(file_path):
-            logger.warning(f"Occupations file not found: {file_path} – skipping.")
-            return
-
-        logger.info(f"Ingesting occupations from {file_path}")
-
+        """Ingest occupations from CSV file."""
+        logger.info("Starting occupation ingestion...")
+        
         def process_batch(batch):
+            # Process each occupation
             for _, row in batch.iterrows():
                 try:
-                    occupation_data = {
-                        "uri": row["conceptUri"],
-                        "preferredLabel_en": row.get("preferredLabel", ""),
-                        "description_en": row.get("description", ""),
-                        "iscoCode": row.get("iscoGroup", ""),
-                        "alternativeLabel_en": row.get("alternativeLabel", ""),
-                        "scopeNote_en": row.get("scopeNote", ""),
-                        "definition_en": row.get("definition", ""),
-                        "regulatedProfessionNote_en": row.get("regulatedProfessionNote", ""),
+                    # Create occupation object
+                    occupation = {
+                        "conceptUri": row["conceptUri"],
+                        "preferredLabel_en": row["preferredLabel_en"],
+                        "description_en": row.get("description_en", ""),
+                        "definition_en": row.get("definition_en", ""),
+                        "code": row.get("code", ""),
+                        "altLabels_en": row.get("altLabels_en", "").split("|") if pd.notna(row.get("altLabels_en")) else []
                     }
-
-                    # Clean empty values and validate float values
-                    occupation_data = {k: v for k, v in occupation_data.items() if v is not None and v != ""}
                     
-                    # Validate float values if any exist
-                    for key, value in occupation_data.items():
-                        if isinstance(value, float):
-                            if not np.isfinite(value):
-                                logger.warning(f"Skipping invalid float value for {key} in occupation {row.get('conceptUri', 'unknown')}")
-                                occupation_data[key] = None
-
-                    # Remove None values after validation
-                    occupation_data = {k: v for k, v in occupation_data.items() if v is not None}
-
-                    # Create UUID from URI
-                    uuid = occupation_data["uri"].split("/")[-1]
-
-                    self.occupation_repo.create_object(
-                        properties=occupation_data,
-                        uuid=uuid
-                    )
-
+                    # Add to repository
+                    self.occupation_repo.add(occupation)
+                    
                 except Exception as e:
-                    logger.error(f"Failed to ingest occupation {row.get('conceptUri', 'unknown')}: {str(e)}")
-                    continue
-
-        self.process_csv_in_batches(file_path, process_batch)
+                    logger.error(f"Error processing occupation {row.get('conceptUri', 'unknown')}: {str(e)}")
+        
+        def update_heartbeat(processed, total):
+            self.client.set_ingestion_metadata(
+                status="in_progress",
+                details={
+                    "step": "ingest_occupations",
+                    "progress": f"{processed}/{total}",
+                    "last_heartbeat": datetime.utcnow().isoformat()
+                }
+            )
+        
+        # Process occupations CSV
+        occupations_file = os.path.join(self.esco_dir, "occupations_en.csv")
+        self.process_csv_in_batches(occupations_file, process_batch, update_heartbeat)
         logger.info("Occupation ingestion completed")
 
     def ingest_skills(self):
-        """Ingest skills into Weaviate"""
-        file_path = os.path.join(self.esco_dir, "skills_en.csv")
-        if not os.path.exists(file_path):
-            logger.warning(f"Skills file not found: {file_path} – skipping.")
-            return
-
-        logger.info(f"Ingesting skills from {file_path}")
-
+        """Ingest skills from CSV file."""
+        logger.info("Starting skill ingestion...")
+        
         def process_batch(batch):
+            # Process each skill
             for _, row in batch.iterrows():
                 try:
-                    skill_data = {
-                        "uri": row["conceptUri"],
-                        "preferredLabel_en": row.get("preferredLabel", ""),
-                        "description_en": row.get("description", ""),
+                    # Create skill object
+                    skill = {
+                        "conceptUri": row["conceptUri"],
+                        "preferredLabel_en": row["preferredLabel_en"],
+                        "description_en": row.get("description_en", ""),
                         "skillType": row.get("skillType", ""),
-                        "alternativeLabel_en": row.get("alternativeLabel", ""),
-                        "scopeNote_en": row.get("scopeNote", ""),
-                        "definition_en": row.get("definition", ""),
+                        "reuseLevel": row.get("reuseLevel", ""),
+                        "altLabels_en": row.get("altLabels_en", "").split("|") if pd.notna(row.get("altLabels_en")) else []
                     }
-
-                    # Clean empty values
-                    skill_data = {k: v for k, v in skill_data.items() if v is not None and v != ""}
-
-                    # Create UUID from URI
-                    uuid = skill_data["uri"].split("/")[-1]
-
-                    self.skill_repo.create_object(
-                        properties=skill_data,
-                        uuid=uuid
-                    )
-
+                    
+                    # Add to repository
+                    self.skill_repo.add(skill)
+                    
                 except Exception as e:
-                    logger.error(f"Failed to ingest skill {row.get('conceptUri', 'unknown')}: {str(e)}")
-                    continue
-
-        self.process_csv_in_batches(file_path, process_batch)
+                    logger.error(f"Error processing skill {row.get('conceptUri', 'unknown')}: {str(e)}")
+        
+        def update_heartbeat(processed, total):
+            self.client.set_ingestion_metadata(
+                status="in_progress",
+                details={
+                    "step": "ingest_skills",
+                    "progress": f"{processed}/{total}",
+                    "last_heartbeat": datetime.utcnow().isoformat()
+                }
+            )
+        
+        # Process skills CSV
+        skills_file = os.path.join(self.esco_dir, "skills_en.csv")
+        self.process_csv_in_batches(skills_file, process_batch, update_heartbeat)
         logger.info("Skill ingestion completed")
 
     def create_skill_relations(self):
@@ -520,80 +520,77 @@ class WeaviateIngestor(BaseIngestor):
             logger.error(f"Error creating ISCO group relations: {str(e)}")
 
     def ingest_skill_groups(self):
-        """Ingest skill groups into Weaviate"""
-        file_path = os.path.join(self.esco_dir, "skillGroups_en.csv")
-        if not os.path.exists(file_path):
-            logger.warning(f"Skill groups file not found: {file_path} – skipping.")
-            return
-
-        logger.info(f"Ingesting skill groups from {file_path}")
-
+        """Ingest skill groups from CSV file."""
+        logger.info("Starting skill group ingestion...")
+        
         def process_batch(batch):
+            # Process each skill group
             for _, row in batch.iterrows():
                 try:
-                    skill_group_data = {
-                        "uri": row["conceptUri"],
-                        "preferredLabel_en": row.get("preferredLabel", ""),
-                        "description_en": row.get("description", ""),
-                        "code": row.get("code", ""),
-                        "alternativeLabel_en": row.get("alternativeLabel", ""),
-                        "scopeNote_en": row.get("scopeNote", ""),
+                    # Create skill group object
+                    skill_group = {
+                        "conceptUri": row["conceptUri"],
+                        "preferredLabel_en": row["preferredLabel_en"],
+                        "description_en": row.get("description_en", ""),
+                        "altLabels_en": row.get("altLabels_en", "").split("|") if pd.notna(row.get("altLabels_en")) else []
                     }
-
-                    # Clean empty values
-                    skill_group_data = {k: v for k, v in skill_group_data.items() if v is not None and v != ""}
-
-                    # Create UUID from URI
-                    uuid = skill_group_data["uri"].split("/")[-1]
-
-                    self.skill_group_repo.create_object(
-                        properties=skill_group_data,
-                        uuid=uuid
-                    )
-
+                    
+                    # Add to repository
+                    self.skill_group_repo.add(skill_group)
+                    
                 except Exception as e:
-                    logger.error(f"Failed to ingest skill group {row.get('conceptUri', 'unknown')}: {str(e)}")
-                    continue
-
-        self.process_csv_in_batches(file_path, process_batch)
+                    logger.error(f"Error processing skill group {row.get('conceptUri', 'unknown')}: {str(e)}")
+        
+        def update_heartbeat(processed, total):
+            self.client.set_ingestion_metadata(
+                status="in_progress",
+                details={
+                    "step": "ingest_skill_groups",
+                    "progress": f"{processed}/{total}",
+                    "last_heartbeat": datetime.utcnow().isoformat()
+                }
+            )
+        
+        # Process skill groups CSV
+        skill_groups_file = os.path.join(self.esco_dir, "skill_groups_en.csv")
+        self.process_csv_in_batches(skill_groups_file, process_batch, update_heartbeat)
         logger.info("Skill group ingestion completed")
 
     def ingest_skill_collections(self):
-        """Ingest skill collections into Weaviate"""
-        file_path = os.path.join(self.esco_dir, "skillCollections_en.csv")
-        if not os.path.exists(file_path):
-            logger.warning(f"Skill collections file not found: {file_path} – skipping.")
-            return
-
-        logger.info(f"Ingesting skill collections from {file_path}")
-
+        """Ingest skill collections from CSV file."""
+        logger.info("Starting skill collection ingestion...")
+        
         def process_batch(batch):
+            # Process each skill collection
             for _, row in batch.iterrows():
                 try:
-                    skill_collection_data = {
-                        "uri": row["conceptUri"],
-                        "preferredLabel_en": row.get("preferredLabel", ""),
-                        "description_en": row.get("description", ""),
-                        "alternativeLabel_en": row.get("alternativeLabel", ""),
-                        "scopeNote_en": row.get("scopeNote", ""),
+                    # Create skill collection object
+                    collection = {
+                        "conceptUri": row["conceptUri"],
+                        "preferredLabel_en": row["preferredLabel_en"],
+                        "description_en": row.get("description_en", ""),
+                        "altLabels_en": row.get("altLabels_en", "").split("|") if pd.notna(row.get("altLabels_en")) else []
                     }
-
-                    # Clean empty values
-                    skill_collection_data = {k: v for k, v in skill_collection_data.items() if v is not None and v != ""}
-
-                    # Create UUID from URI
-                    uuid = skill_collection_data["uri"].split("/")[-1]
-
-                    self.skill_collection_repo.create_object(
-                        properties=skill_collection_data,
-                        uuid=uuid
-                    )
-
+                    
+                    # Add to repository
+                    self.skill_collection_repo.add(collection)
+                    
                 except Exception as e:
-                    logger.error(f"Failed to ingest skill collection {row.get('conceptUri', 'unknown')}: {str(e)}")
-                    continue
-
-        self.process_csv_in_batches(file_path, process_batch)
+                    logger.error(f"Error processing skill collection {row.get('conceptUri', 'unknown')}: {str(e)}")
+        
+        def update_heartbeat(processed, total):
+            self.client.set_ingestion_metadata(
+                status="in_progress",
+                details={
+                    "step": "ingest_skill_collections",
+                    "progress": f"{processed}/{total}",
+                    "last_heartbeat": datetime.utcnow().isoformat()
+                }
+            )
+        
+        # Process skill collections CSV
+        collections_file = os.path.join(self.esco_dir, "skill_collections_en.csv")
+        self.process_csv_in_batches(collections_file, process_batch, update_heartbeat)
         logger.info("Skill collection ingestion completed")
 
     def create_skill_collection_relations(self):

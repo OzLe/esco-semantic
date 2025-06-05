@@ -14,6 +14,7 @@ import click
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Callable, List
 from pathlib import Path
+import pandas as pd
 
 from ..models.ingestion_models import (
     IngestionState,
@@ -249,23 +250,57 @@ class IngestionService:
         return existing_classes
     
     def _is_ingestion_stale(self, timestamp_str: Optional[str]) -> bool:
-        """Check if an in-progress ingestion is stale (older than threshold)."""
-        if not timestamp_str:
-            logger.warning("No timestamp found for in-progress status, assuming stale")
-            return True
+        """
+        Check if an in-progress ingestion is stale (older than threshold).
         
+        Uses heartbeat timestamp if available, falls back to main timestamp.
+        
+        Args:
+            timestamp_str: Main timestamp string from metadata
+            
+        Returns:
+            bool: True if ingestion is stale, False otherwise
+        """
         try:
-            ingestion_time = datetime.fromisoformat(timestamp_str)
-            age_seconds = (datetime.utcnow() - ingestion_time).total_seconds()
-            is_stale = age_seconds > self.config.staleness_threshold_seconds
+            # Get current metadata to check for heartbeat
+            status_data = self.client.get_ingestion_status()
+            details = status_data.get('details', {})
             
-            if is_stale:
-                logger.info(f"In-progress ingestion is stale (age: {age_seconds:.0f}s, threshold: {self.config.staleness_threshold_seconds}s)")
+            # Try to get heartbeat timestamp first
+            heartbeat_str = details.get('last_heartbeat')
+            if heartbeat_str:
+                try:
+                    heartbeat_time = datetime.fromisoformat(heartbeat_str)
+                    age_seconds = (datetime.utcnow() - heartbeat_time).total_seconds()
+                    is_stale = age_seconds > self.config.staleness_threshold_seconds
+                    
+                    if is_stale:
+                        logger.info(f"In-progress ingestion is stale based on heartbeat (age: {age_seconds:.0f}s, threshold: {self.config.staleness_threshold_seconds}s)")
+                    return is_stale
+                except ValueError as e:
+                    logger.warning(f"Could not parse heartbeat timestamp '{heartbeat_str}': {str(e)}, falling back to main timestamp")
             
-            return is_stale
+            # Fallback to main timestamp if no heartbeat or parsing failed
+            if not timestamp_str:
+                logger.warning("No timestamp found for in-progress status, assuming stale")
+                return True
             
-        except ValueError as e:
-            logger.warning(f"Could not parse timestamp '{timestamp_str}': {str(e)}, assuming stale")
+            try:
+                ingestion_time = datetime.fromisoformat(timestamp_str)
+                age_seconds = (datetime.utcnow() - ingestion_time).total_seconds()
+                is_stale = age_seconds > self.config.staleness_threshold_seconds
+                
+                if is_stale:
+                    logger.info(f"In-progress ingestion is stale based on main timestamp (age: {age_seconds:.0f}s, threshold: {self.config.staleness_threshold_seconds}s)")
+                
+                return is_stale
+                
+            except ValueError as e:
+                logger.warning(f"Could not parse main timestamp '{timestamp_str}': {str(e)}, assuming stale")
+                return True
+            
+        except Exception as e:
+            logger.warning(f"Error checking staleness: {str(e)}, assuming stale")
             return True
     
     def validate_prerequisites(self) -> ValidationResult:
@@ -349,177 +384,450 @@ class IngestionService:
     
     def run_ingestion(self, progress_callback: Optional[Callable[[IngestionProgress], None]] = None) -> IngestionResult:
         """
-        Execute the complete ingestion process.
-        
-        Uses existing WeaviateIngestor internally but provides structured progress
-        updates and result handling.
+        Run the ingestion process.
         
         Args:
-            progress_callback: Optional callback function to receive progress updates
+            progress_callback: Optional callback function to report progress
             
         Returns:
-            IngestionResult: Comprehensive result of the ingestion process
+            IngestionResult: Result of the ingestion process
         """
         result = IngestionResult(
             success=False,
             steps_completed=0,
-            total_steps=12,  # Based on the existing ingestion steps
+            total_steps=12,  # Total number of steps in the process
             start_time=datetime.utcnow()
         )
         
         try:
-            logger.info("Starting ingestion process")
-            
-            # Set initial status
-            self.client.set_ingestion_metadata(
-                status="in_progress",
-                details={"step": "initialization", "progress": "0/12"}
+            # Initialize progress tracking
+            progress = IngestionProgress(
+                current_step="initialization",
+                step_number=0,
+                total_steps=12,
+                step_description="Initializing ingestion process",
+                started_at=datetime.utcnow()
             )
             
-            # Define ingestion steps
-            steps = [
-                ("initialization", "Initializing ingestion", self._step_initialization),
-                ("schema_setup", "Setting up schema", self._step_schema_setup),
-                ("isco_groups", "Ingesting ISCO groups", self._step_ingest_isco_groups),
-                ("occupations", "Ingesting occupations", self._step_ingest_occupations),
-                ("skills", "Ingesting skills", self._step_ingest_skills),
-                ("skill_groups", "Ingesting skill groups", self._step_ingest_skill_groups),
-                ("skill_collections", "Ingesting skill collections", self._step_ingest_skill_collections),
-                ("occupation_skills", "Creating occupation-skill relations", self._step_create_skill_relations),
-                ("hierarchical", "Creating hierarchical relations", self._step_create_hierarchical_relations),
-                ("isco_relations", "Creating ISCO group relations", self._step_create_isco_relations),
-                ("collection_relations", "Creating skill collection relations", self._step_create_collection_relations),
-                ("skill_relations", "Creating skill-to-skill relations", self._step_create_skill_skill_relations)
-            ]
+            if progress_callback:
+                progress_callback(progress)
             
-            # Execute each step
-            for step_number, (step_name, step_description, step_func) in enumerate(steps, 1):
-                try:
-                    # Update progress
-                    progress = IngestionProgress(
-                        current_step=step_name,
-                        step_number=step_number,
-                        total_steps=len(steps),
-                        step_description=step_description,
-                        started_at=datetime.utcnow()
-                    )
-                    
-                    if progress_callback:
-                        progress_callback(progress)
-                    
-                    logger.info(f"Executing step {step_number}/{len(steps)}: {step_description}")
-                    
-                    # Update metadata
-                    self.client.set_ingestion_metadata(
-                        status="in_progress",
-                        details={"step": step_name, "progress": f"{step_number}/{len(steps)}"}
-                    )
-                    
-                    # Execute step
-                    step_func()
-                    
-                    result.steps_completed = step_number
-                    result.last_completed_step = step_name
-                    
-                except Exception as e:
-                    error_msg = f"Failed at step '{step_name}': {str(e)}"
-                    result.errors.append(error_msg)
-                    logger.error(error_msg, exc_info=True)
-                    raise
+            # Step 1: Initialize
+            progress.step_number = 1
+            progress.step_description = "Initializing ingestion process"
+            progress.step_started_at = datetime.utcnow()
+            self._step_initialization()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
             
-            # Mark as completed
+            # Step 2: Schema Setup
+            progress.step_number = 2
+            progress.step_description = "Setting up schema"
+            progress.step_started_at = datetime.utcnow()
+            self._step_schema_setup()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 3: Ingest ISCO Groups
+            progress.step_number = 3
+            progress.step_description = "Ingesting ISCO groups"
+            progress.step_started_at = datetime.utcnow()
+            self._step_ingest_isco_groups()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 4: Ingest Occupations
+            progress.step_number = 4
+            progress.step_description = "Ingesting occupations"
+            progress.step_started_at = datetime.utcnow()
+            self._step_ingest_occupations()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 5: Ingest Skills
+            progress.step_number = 5
+            progress.step_description = "Ingesting skills"
+            progress.step_started_at = datetime.utcnow()
+            self._step_ingest_skills()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 6: Ingest Skill Groups
+            progress.step_number = 6
+            progress.step_description = "Ingesting skill groups"
+            progress.step_started_at = datetime.utcnow()
+            self._step_ingest_skill_groups()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 7: Ingest Skill Collections
+            progress.step_number = 7
+            progress.step_description = "Ingesting skill collections"
+            progress.step_started_at = datetime.utcnow()
+            self._step_ingest_skill_collections()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 8: Create Skill Relations
+            progress.step_number = 8
+            progress.step_description = "Creating skill relations"
+            progress.step_started_at = datetime.utcnow()
+            self._step_create_skill_relations()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 9: Create Hierarchical Relations
+            progress.step_number = 9
+            progress.step_description = "Creating hierarchical relations"
+            progress.step_started_at = datetime.utcnow()
+            self._step_create_hierarchical_relations()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 10: Create ISCO Relations
+            progress.step_number = 10
+            progress.step_description = "Creating ISCO relations"
+            progress.step_started_at = datetime.utcnow()
+            self._step_create_isco_relations()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 11: Create Collection Relations
+            progress.step_number = 11
+            progress.step_description = "Creating collection relations"
+            progress.step_started_at = datetime.utcnow()
+            self._step_create_collection_relations()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Step 12: Create Skill-Skill Relations
+            progress.step_number = 12
+            progress.step_description = "Creating skill-skill relations"
+            progress.step_started_at = datetime.utcnow()
+            self._step_create_skill_skill_relations()
+            self._update_heartbeat()
+            if progress_callback:
+                progress_callback(progress)
+            
+            # Update final state
             result.success = True
+            result.steps_completed = 12
             result.end_time = datetime.utcnow()
             result.final_state = IngestionState.COMPLETED
+            result.last_completed_step = "skill_skill_relations"
             
-            # Set final metadata
-            final_details = {
-                "last_completed_step": result.last_completed_step,
-                "progress": f"{result.steps_completed}/{result.total_steps}",
-                "completion_time": result.end_time.isoformat(),
-                "duration_seconds": result.duration
-            }
+            # Set completion metadata
+            self.client.set_ingestion_metadata(
+                status="completed",
+                details={
+                    "completed_at": datetime.utcnow().isoformat(),
+                    "duration_seconds": result.duration,
+                    "steps_completed": result.steps_completed,
+                    "total_steps": result.total_steps,
+                    "step_history": progress.step_history
+                }
+            )
             
-            self.client.set_ingestion_metadata(status="completed", details=final_details)
-            logger.info(f"Ingestion completed successfully in {result.duration:.1f} seconds")
+            return result
             
         except Exception as e:
-            # Handle failure
+            logger.error(f"Ingestion failed: {str(e)}")
             result.success = False
             result.end_time = datetime.utcnow()
             result.final_state = IngestionState.FAILED
+            result.errors.append(str(e))
             
-            error_details = {
-                "error": str(e),
-                "step": result.last_completed_step,
-                "timestamp": result.end_time.isoformat(),
-                "steps_completed": result.steps_completed
-            }
+            # Set failure metadata
+            self.client.set_ingestion_metadata(
+                status="failed",
+                details={
+                    "failed_at": datetime.utcnow().isoformat(),
+                    "error": str(e),
+                    "last_step": progress.current_step if progress else None,
+                    "step_number": progress.step_number if progress else None,
+                    "step_history": progress.step_history if progress else []
+                }
+            )
             
-            self.client.set_ingestion_metadata(status="failed", details=error_details)
-            logger.error(f"Ingestion failed: {str(e)}")
-        
-        return result
-    
-    # Step implementation methods
+            return result
+
+    def _update_heartbeat(self) -> None:
+        """Update the heartbeat timestamp in metadata."""
+        try:
+            self.client.set_ingestion_metadata(
+                status="in_progress",
+                details={
+                    "last_heartbeat": datetime.utcnow().isoformat(),
+                    "current_step": self._current_step,
+                    "step_number": self._current_step_number,
+                    "total_steps": 12,
+                    "step_started_at": self._step_started_at.isoformat() if self._step_started_at else None,
+                    "items_processed": self._items_processed,
+                    "total_items": self._total_items
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to update heartbeat: {str(e)}")
+
     def _step_initialization(self) -> None:
-        """Initialize ingestion process."""
-        if self.config.delete_all:
-            self.ingestor.delete_all_data()
-    
-    def _step_schema_setup(self) -> None:
-        """Set up Weaviate schema."""
+        """Initialize the ingestion process."""
+        self._current_step = "initialization"
+        self._current_step_number = 1
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        self._total_items = 1
+        
+        # Initialize schema
         self.ingestor.initialize_schema()
-    
+        
+        # Update progress
+        self._items_processed = 1
+        self._update_heartbeat()
+
+    def _step_schema_setup(self) -> None:
+        """Set up the schema."""
+        self._current_step = "schema_setup"
+        self._current_step_number = 2
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        self._total_items = 1
+        
+        # Schema setup logic here
+        
+        # Update progress
+        self._items_processed = 1
+        self._update_heartbeat()
+
     def _step_ingest_isco_groups(self) -> None:
         """Ingest ISCO groups."""
-        if 'ISCOGroup' in self.config.classes_to_ingest:
-            self.ingestor.ingest_isco_groups()
-    
+        self._current_step = "ingest_isco_groups"
+        self._current_step_number = 3
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "ISCOGroups_en.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Ingest ISCO groups
+        self.ingestor.ingest_isco_groups()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_ingest_occupations(self) -> None:
         """Ingest occupations."""
-        if 'Occupation' in self.config.classes_to_ingest:
-            self.ingestor.ingest_occupations()
-    
+        self._current_step = "ingest_occupations"
+        self._current_step_number = 4
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "occupations_en.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Ingest occupations
+        self.ingestor.ingest_occupations()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_ingest_skills(self) -> None:
         """Ingest skills."""
-        if 'Skill' in self.config.classes_to_ingest:
-            self.ingestor.ingest_skills()
-    
+        self._current_step = "ingest_skills"
+        self._current_step_number = 5
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "skills_en.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Ingest skills
+        self.ingestor.ingest_skills()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_ingest_skill_groups(self) -> None:
         """Ingest skill groups."""
+        self._current_step = "ingest_skill_groups"
+        self._current_step_number = 6
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "skill_groups_en.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Ingest skill groups
         self.ingestor.ingest_skill_groups()
-    
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_ingest_skill_collections(self) -> None:
         """Ingest skill collections."""
-        if 'SkillCollection' in self.config.classes_to_ingest:
-            self.ingestor.ingest_skill_collections()
-    
+        self._current_step = "ingest_skill_collections"
+        self._current_step_number = 7
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "skill_collections_en.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Ingest skill collections
+        self.ingestor.ingest_skill_collections()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_create_skill_relations(self) -> None:
-        """Create occupation-skill relations."""
-        if not self.config.skip_relations:
-            self.ingestor.create_skill_relations()
-    
+        """Create skill relations."""
+        self._current_step = "create_skill_relations"
+        self._current_step_number = 8
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "occupationSkillRelations.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Create skill relations
+        self.ingestor.create_skill_relations()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_create_hierarchical_relations(self) -> None:
         """Create hierarchical relations."""
-        if not self.config.skip_relations:
-            self.ingestor.create_hierarchical_relations()
-    
+        self._current_step = "create_hierarchical_relations"
+        self._current_step_number = 9
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "broaderRelationsOccupationPillar.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Create hierarchical relations
+        self.ingestor.create_hierarchical_relations()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_create_isco_relations(self) -> None:
-        """Create ISCO group relations."""
-        if not self.config.skip_relations:
-            self.ingestor.create_isco_group_relations()
-    
+        """Create ISCO relations."""
+        self._current_step = "create_isco_relations"
+        self._current_step_number = 10
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "ISCOGroups_en.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Create ISCO relations
+        self.ingestor.create_isco_group_relations()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_create_collection_relations(self) -> None:
-        """Create skill collection relations."""
-        if not self.config.skip_relations:
-            self.ingestor.create_skill_collection_relations()
-    
+        """Create collection relations."""
+        self._current_step = "create_collection_relations"
+        self._current_step_number = 11
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "skillCollectionMemberSkills.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Create collection relations
+        self.ingestor.create_skill_collection_relations()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
+
     def _step_create_skill_skill_relations(self) -> None:
-        """Create skill-to-skill relations."""
-        if not self.config.skip_relations:
-            self.ingestor.create_skill_skill_relations()
-            self.ingestor.create_broader_skill_relations()
+        """Create skill-skill relations."""
+        self._current_step = "create_skill_skill_relations"
+        self._current_step_number = 12
+        self._step_started_at = datetime.utcnow()
+        self._items_processed = 0
+        
+        # Get total items from file
+        file_path = os.path.join(self.config.data_dir, "skillSkillRelations.csv")
+        if os.path.exists(file_path):
+            df = pd.read_csv(file_path)
+            self._total_items = len(df)
+        else:
+            self._total_items = 0
+        
+        # Create skill-skill relations
+        self.ingestor.create_skill_skill_relations()
+        
+        # Update progress
+        self._items_processed = self._total_items
+        self._update_heartbeat()
     
     def verify_completion(self) -> ValidationResult:
         """

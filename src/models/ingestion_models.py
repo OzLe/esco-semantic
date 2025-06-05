@@ -7,7 +7,7 @@ inputs, outputs, and state throughout the ingestion process.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, timedelta
 from datetime import datetime
 
 
@@ -50,6 +50,13 @@ class IngestionProgress:
     step_description: str = ""
     started_at: Optional[datetime] = None
     estimated_completion: Optional[datetime] = None
+    step_started_at: Optional[datetime] = None
+    step_estimated_completion: Optional[datetime] = None
+    items_processed: int = 0
+    total_items: int = 0
+    step_duration_seconds: Optional[float] = None
+    average_step_duration: Optional[float] = None
+    step_history: List[Dict[str, Any]] = field(default_factory=list)
     
     @property
     def progress_percentage(self) -> float:
@@ -59,9 +66,72 @@ class IngestionProgress:
         return (self.step_number / self.total_steps) * 100.0
     
     @property
+    def step_progress_percentage(self) -> float:
+        """Calculate current step progress as a percentage."""
+        if self.total_items == 0:
+            return 0.0
+        return (self.items_processed / self.total_items) * 100.0
+    
+    @property
     def progress_display(self) -> str:
         """Get a formatted progress display string."""
         return f"{self.step_number}/{self.total_steps}"
+    
+    @property
+    def step_progress_display(self) -> str:
+        """Get a formatted step progress display string."""
+        return f"{self.items_processed}/{self.total_items}"
+    
+    @property
+    def estimated_time_remaining(self) -> Optional[timedelta]:
+        """Calculate estimated time remaining based on step history."""
+        if not self.step_started_at or not self.average_step_duration:
+            return None
+        
+        remaining_steps = self.total_steps - self.step_number
+        if remaining_steps <= 0:
+            return timedelta(seconds=0)
+        
+        # Calculate remaining time based on average step duration
+        remaining_seconds = self.average_step_duration * remaining_steps
+        
+        # Add remaining time in current step if we have progress
+        if self.total_items > 0:
+            step_progress = self.items_processed / self.total_items
+            remaining_seconds += self.average_step_duration * (1 - step_progress)
+        
+        return timedelta(seconds=remaining_seconds)
+    
+    def update_step_progress(self, items_processed: int, total_items: int) -> None:
+        """Update progress within the current step."""
+        self.items_processed = items_processed
+        self.total_items = total_items
+        
+        # Update step ETA if we have timing information
+        if self.step_started_at and self.average_step_duration:
+            progress = items_processed / total_items if total_items > 0 else 0
+            remaining_seconds = self.average_step_duration * (1 - progress)
+            self.step_estimated_completion = datetime.utcnow() + timedelta(seconds=remaining_seconds)
+    
+    def complete_step(self, step_name: str, duration_seconds: float) -> None:
+        """Record completion of a step and update timing information."""
+        self.step_history.append({
+            'step': step_name,
+            'duration_seconds': duration_seconds,
+            'completed_at': datetime.utcnow()
+        })
+        
+        # Update average step duration
+        if self.step_history:
+            total_duration = sum(step['duration_seconds'] for step in self.step_history)
+            self.average_step_duration = total_duration / len(self.step_history)
+        
+        # Reset step-specific fields
+        self.step_started_at = None
+        self.step_estimated_completion = None
+        self.items_processed = 0
+        self.total_items = 0
+        self.step_duration_seconds = None
 
 
 @dataclass
@@ -156,7 +226,7 @@ class IngestionConfig:
     docker_env: bool = False
     
     # Timeouts and limits
-    staleness_threshold_seconds: int = 3600
+    staleness_threshold_seconds: int = 7200
     max_retry_attempts: int = 3
     retry_delay_seconds: int = 30
     

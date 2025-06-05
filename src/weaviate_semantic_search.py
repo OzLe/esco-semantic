@@ -120,7 +120,15 @@ class ESCOSemanticSearch:
         return "cpu"
 
     def validate_data(self) -> Tuple[bool, Dict[str, Any]]:
-        """Validate the data in the Weaviate database including ingestion status"""
+        """
+        Validate the data in the Weaviate database including ingestion status.
+        
+        This method distinguishes between missing data and in-progress ingestion,
+        providing clear error messages about the current state.
+        
+        Returns:
+            Tuple[bool, Dict[str, Any]]: (is_valid, validation_details)
+        """
         validation_details = {
             "ingestion_status": "unknown",
             "skills_indexed": False,
@@ -129,34 +137,50 @@ class ESCOSemanticSearch:
             "skills_count": 0,
             "occupations_count": 0,
             "isco_groups_count": 0,
-            "errors": []
+            "errors": [],
+            "warnings": []
         }
         
         try:
             # Check ingestion status first
             status = self.client.get_ingestion_status()
-            validation_details["ingestion_status"] = status.get("status", "unknown")
+            current_status = status.get("status", "unknown")
+            validation_details["ingestion_status"] = current_status
             
-            if status.get("status") != "completed":
-                error_message = f"Ingestion not completed: status is '{status.get('status')}'."
-                # Attempt to parse details if they are a JSON string, or use as is if dict/str
-                status_details = status.get("details")
-                if status_details:
-                    if isinstance(status_details, str):
-                        try:
-                            parsed_details = json.loads(status_details)
-                            error_message += f" Details: {json.dumps(parsed_details)}" # Re-serialize for consistent string format
-                        except json.JSONDecodeError:
-                            error_message += f" Details (raw string): {status_details}"
-                    elif isinstance(status_details, dict):
-                        error_message += f" Details: {json.dumps(status_details)}" # Serialize dict for consistent string format
-                    else:
-                        error_message += f" Details (unknown type): {str(status_details)}"
-                        
-                validation_details["errors"].append(error_message)
+            # Get status details for better error reporting
+            status_details = status.get("details", {})
+            if isinstance(status_details, str):
+                try:
+                    status_details = json.loads(status_details)
+                except json.JSONDecodeError:
+                    pass
+            
+            # Handle different ingestion states
+            if current_status == "in_progress":
+                # Extract progress information
+                step = status_details.get("step", "unknown")
+                progress = status_details.get("progress", "unknown")
+                last_heartbeat = status_details.get("last_heartbeat", "unknown")
+                
+                warning_msg = (
+                    f"Ingestion is still in progress - Step: {step}, "
+                    f"Progress: {progress}, Last heartbeat: {last_heartbeat}"
+                )
+                validation_details["warnings"].append(warning_msg)
+                return False, validation_details
+                
+            elif current_status == "failed":
+                error_msg = f"Ingestion failed: {status_details.get('error', 'Unknown error')}"
+                validation_details["errors"].append(error_msg)
+                return False, validation_details
+                
+            elif current_status != "completed":
+                warning_msg = f"Ingestion has not started or is in an unknown state: {current_status}"
+                validation_details["warnings"].append(warning_msg)
                 return False, validation_details
             
-            # Check each entity type
+            # If we get here, ingestion is completed - now check data
+            missing_data = []
             for entity_type in ["Skill", "Occupation", "ISCOGroup"]:
                 try:
                     result = self.client.client.query.aggregate(entity_type).with_meta_count().do()
@@ -165,18 +189,30 @@ class ESCOSemanticSearch:
                     if entity_type == "Skill":
                         validation_details["skills_count"] = count
                         validation_details["skills_indexed"] = count > 0
+                        if count == 0:
+                            missing_data.append("skills")
                     elif entity_type == "Occupation":
                         validation_details["occupations_count"] = count
                         validation_details["occupations_indexed"] = count > 0
+                        if count == 0:
+                            missing_data.append("occupations")
                     elif entity_type == "ISCOGroup":
                         validation_details["isco_groups_count"] = count
                         validation_details["isco_groups_indexed"] = count > 0
-                        
+                        if count == 0:
+                            missing_data.append("ISCO groups")
+                            
                 except Exception as e:
-                    validation_details["errors"].append(f"Error checking {entity_type}: {str(e)}")
+                    error_msg = f"Error checking {entity_type}: {str(e)}"
+                    validation_details["errors"].append(error_msg)
             
+            # Check if we have the minimum required data
             is_valid = (validation_details["skills_indexed"] and 
                        validation_details["occupations_indexed"])
+            
+            if not is_valid and missing_data:
+                error_msg = f"Missing required data: {', '.join(missing_data)}"
+                validation_details["errors"].append(error_msg)
             
             return is_valid, validation_details
             
