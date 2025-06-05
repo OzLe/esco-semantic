@@ -48,3 +48,4 @@ neo4j_plugins/
 Thumbs.db
 model_cache/
 docs/
+.cursor

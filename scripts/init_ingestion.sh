@@ -4,6 +4,7 @@ set -e
 # Configuration
 MAX_RETRIES=120  # Maximum number of retries (30s * 120 = 1 hour timeout)
 HEARTBEAT_INTERVAL=30  # Seconds between heartbeat messages
+HEARTBEAT_LOG_INTERVAL=300  # Log heartbeat every 5 minutes (reduced frequency)
 LOG_PREFIX="[Init Container]"
 
 # Helper function to log messages with timestamp
@@ -21,11 +22,12 @@ check_process() {
     fi
 }
 
-# Helper function to handle timeouts
+# Helper function to handle timeouts with reduced heartbeat spam
 handle_timeout() {
     local pid=$1
     local timeout=$2
     local start_time=$(date +%s)
+    local last_heartbeat_log=0
     
     while true; do
         if ! check_process $pid; then
@@ -41,16 +43,17 @@ handle_timeout() {
             return 1
         fi
         
-        # Send heartbeat message
-        if [ $((elapsed % HEARTBEAT_INTERVAL)) -eq 0 ]; then
-            log "⏳ Process still running... (${elapsed}s elapsed)"
+        # Send heartbeat message only at configured intervals to reduce spam
+        if [ $((elapsed % HEARTBEAT_LOG_INTERVAL)) -eq 0 ] && [ $elapsed -gt $last_heartbeat_log ]; then
+            log "⏳ Initialization in progress (${elapsed}s elapsed, timeout: ${timeout}s)"
+            last_heartbeat_log=$elapsed
         fi
         
-        sleep 1
+        sleep $HEARTBEAT_INTERVAL
     done
 }
 
-log "Starting ingestion status check..."
+log "Starting ESCO ingestion initialization"
 
 # Run Python script to check status (using service layer)
 python -m src.init_ingestion "$@" &
@@ -58,7 +61,7 @@ INGESTION_PID=$!
 
 # Monitor the ingestion process with timeout
 if ! handle_timeout $INGESTION_PID $((MAX_RETRIES * HEARTBEAT_INTERVAL)); then
-    log "❌ Ingestion process timed out after $((MAX_RETRIES * HEARTBEAT_INTERVAL)) seconds"
+    log "❌ Initialization timed out after $((MAX_RETRIES * HEARTBEAT_INTERVAL)) seconds"
     exit 4  # New exit code for timeout
 fi
 
@@ -68,27 +71,27 @@ exit_code=$?
 
 case $exit_code in
     0)
-        log "✓ Data already ingested or ingestion completed successfully"
+        log "✓ Initialization completed successfully"
         exit 0
         ;;
     1)
-        log "⏳ Ingestion in progress, waiting ${HEARTBEAT_INTERVAL} seconds..."
+        log "⏳ Ingestion in progress, will retry in ${HEARTBEAT_INTERVAL}s"
         sleep $HEARTBEAT_INTERVAL
         exec "$0" "$@"  # Retry the current script with same arguments
         ;;
     2)
-        log "❌ Ingestion needs to be run but prerequisites failed or manual intervention required"
-        log "Check logs for details or run with --force-reingest if needed"
+        log "❌ Manual intervention required"
+        log "Check logs or run with --force-reingest if needed"
         exit $exit_code
         ;;
     3)
-        log "❌ Ingestion or verification failed"
+        log "❌ Initialization failed"
         log "Check logs for detailed error information"
         exit $exit_code
         ;;
     4)
-        log "❌ Ingestion process timed out"
-        log "The process took longer than $((MAX_RETRIES * HEARTBEAT_INTERVAL)) seconds to complete"
+        log "❌ Process timeout"
+        log "Initialization took longer than $((MAX_RETRIES * HEARTBEAT_INTERVAL)) seconds"
         exit $exit_code
         ;;
     *)

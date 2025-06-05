@@ -408,6 +408,11 @@ class WeaviateClient:
     def get_ingestion_status(self) -> dict:
         """Check if ingestion was completed successfully"""
         try:
+            # First check if the Metadata class exists in the schema
+            if not self.client.schema.exists("Metadata"):
+                logger.debug("Metadata class does not exist, assuming not_started status")
+                return {"status": "not_started"}
+            
             result = (
                 self.client.query
                 .get("Metadata", ["metaType", "status", "timestamp", "details"])

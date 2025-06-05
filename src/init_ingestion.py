@@ -42,8 +42,6 @@ def main(config_path: str = "config/weaviate_config.yaml", profile: str = "defau
     """
     service = None
     try:
-        logger.info(f"Initializing ingestion check with config: {config_path}, profile: {profile}")
-        
         # Create ingestion configuration for container mode
         ingestion_config = IngestionConfig(
             config_path=config_path,
@@ -58,88 +56,74 @@ def main(config_path: str = "config/weaviate_config.yaml", profile: str = "defau
         
         # Get current state
         current_state = service.get_current_state()
-        logger.info(f"Current ingestion state: {current_state.value}")
         
         # Handle completed state
         if current_state == IngestionState.COMPLETED:
-            logger.info("Data already ingested, skipping...")
+            logger.info("[init_container] Data already available, initialization complete")
             return 0
         
         # Handle in-progress state  
         elif current_state == IngestionState.IN_PROGRESS:
-            logger.info("Ingestion in progress, waiting...")
+            logger.info("[init_container] Detected ongoing ingestion, monitoring progress...")
             return 1
         
         # Handle other states - need to run ingestion
         else:  # NOT_STARTED, FAILED, UNKNOWN
-            logger.info(f"Initial state is '{current_state.value}'. Starting new ingestion...")
+            logger.info(f"[init_container] State '{current_state.value}' requires new ingestion")
             
             # Check if we should run ingestion (handles non-interactive mode logic)
             decision = service.should_run_ingestion(force_reingest=False)
             
             if not decision.should_run:
-                logger.warning(f"Ingestion decision: {decision.reason}")
+                logger.warning(f"[init_container] Cannot proceed: {decision.reason}")
                 if decision.force_required:
-                    logger.info("Use --force-reingest in CLI to override this decision.")
+                    logger.info("[init_container] Manual intervention required (--force-reingest)")
                     return 2  # Needs manual intervention
                 return 2  # Needs ingestion but can't proceed
             
             # Validate prerequisites before starting
-            logger.info("Validating prerequisites...")
+            logger.info("[init_container] Validating prerequisites...")
             validation = service.validate_prerequisites()
             
             if not validation.is_valid:
-                logger.error("Prerequisites validation failed:")
+                logger.error("[init_container] Prerequisites validation failed:")
                 for error in validation.errors:
                     logger.error(f"  • {error}")
                 return 2
             
             if validation.warnings:
-                logger.warning("Prerequisites validation warnings:")
+                logger.warning("[init_container] Prerequisites validation warnings:")
                 for warning in validation.warnings:
                     logger.warning(f"  • {warning}")
             
             # Run ingestion using the service layer
-            logger.info("Running ingestion via service layer...")
+            logger.info("[init_container] Starting ingestion process...")
             result = service.run_ingestion()
             
-            # Check result
             if result.success:
-                logger.info(f"Ingestion completed successfully in {result.duration:.1f} seconds")
-                
-                # Verify completion
-                logger.info("Verifying ingestion completion...")
-                verification = service.verify_completion()
-                
-                if verification.is_valid:
-                    logger.info("Post-ingestion verification: Status is COMPLETED")
-                    
-                    # Log metrics
-                    metrics = service.get_ingestion_metrics()
-                    if metrics.get('entity_counts'):
-                        logger.info("Entity counts:")
-                        for class_name, count in metrics['entity_counts'].items():
-                            if count > 0:
-                                logger.info(f"  • {class_name}: {count}")
-                    
-                    return 0
-                else:
-                    logger.error("Post-ingestion verification failed:")
-                    for error in verification.errors:
-                        logger.error(f"  • {error}")
-                    return 3  # Verification failed
+                logger.info(f"[init_container] Ingestion completed successfully in {result.duration:.1f}s")
+                return 0
             else:
-                logger.error("Ingestion failed:")
-                for error in result.errors:
-                    logger.error(f"  • {error}")
-                return 3  # Ingestion failed
-            
+                logger.error(f"[init_container] Ingestion failed: {'; '.join(result.errors)}")
+                return 3
+                
     except Exception as e:
-        log_error(logger, e, {'operation': 'main', 'config_path': config_path, 'profile': profile})
-        return 2  # General error
+        error_msg = f"[init_container] Initialization error: {str(e)}"
+        logger.error(error_msg)
+        if service:
+            try:
+                service.close()
+            except:
+                pass
+        return 3
+    
     finally:
-        if service is not None:
-            service.close()
+        # Clean up service resources
+        if service:
+            try:
+                service.close()
+            except Exception as cleanup_error:
+                logger.warning(f"[init_container] Cleanup warning: {str(cleanup_error)}")
 
 
 if __name__ == "__main__":
@@ -154,10 +138,11 @@ if __name__ == "__main__":
     
     exit_code = main(config_path, profile)
     
-    # Handle retry logic for in-progress ingestion (same logic as before)
+    # Handle retry logic for in-progress ingestion with reduced sleep time
     if exit_code == 1:
-        logger.info("Waiting for in-progress ingestion...")
-        time.sleep(3800)
+        # Reduced sleep time and simplified message
+        logger.info("[init_container] Deferring to ongoing ingestion process")
+        time.sleep(30)  # Reduced from 3800 to 30 seconds
         sys.exit(1)  # Signal to retry
         
     sys.exit(exit_code) 

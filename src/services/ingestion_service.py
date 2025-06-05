@@ -683,7 +683,7 @@ class IngestionService:
         self._items_processed = 0
         
         # Get total items from file
-        file_path = os.path.join(self.config.data_dir, "skill_groups_en.csv")
+        file_path = os.path.join(self.config.data_dir, "skillGroups_en.csv")
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
             self._total_items = len(df)
@@ -705,7 +705,7 @@ class IngestionService:
         self._items_processed = 0
         
         # Get total items from file
-        file_path = os.path.join(self.config.data_dir, "skill_collections_en.csv")
+        file_path = os.path.join(self.config.data_dir, "conceptSchemes_en.csv")
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
             self._total_items = len(df)
@@ -727,7 +727,7 @@ class IngestionService:
         self._items_processed = 0
         
         # Get total items from file
-        file_path = os.path.join(self.config.data_dir, "occupationSkillRelations.csv")
+        file_path = os.path.join(self.config.data_dir, "occupationSkillRelations_en.csv")
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
             self._total_items = len(df)
@@ -749,7 +749,7 @@ class IngestionService:
         self._items_processed = 0
         
         # Get total items from file
-        file_path = os.path.join(self.config.data_dir, "broaderRelationsOccupationPillar.csv")
+        file_path = os.path.join(self.config.data_dir, "broaderRelationsOccPillar_en.csv")
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
             self._total_items = len(df)
@@ -793,7 +793,7 @@ class IngestionService:
         self._items_processed = 0
         
         # Get total items from file
-        file_path = os.path.join(self.config.data_dir, "skillCollectionMemberSkills.csv")
+        file_path = os.path.join(self.config.data_dir, "skillSkillRelations_en.csv")
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
             self._total_items = len(df)
@@ -815,7 +815,7 @@ class IngestionService:
         self._items_processed = 0
         
         # Get total items from file
-        file_path = os.path.join(self.config.data_dir, "skillSkillRelations.csv")
+        file_path = os.path.join(self.config.data_dir, "skillSkillRelations_en.csv")
         if os.path.exists(file_path):
             df = pd.read_csv(file_path)
             self._total_items = len(df)

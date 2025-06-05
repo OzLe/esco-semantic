@@ -20,6 +20,7 @@ logger = setup_logging()
 # Constants
 DEFAULT_TIMEOUT_MINUTES = 60
 POLL_INTERVAL_SECONDS = 30
+LOG_INTERVAL_SECONDS = 300  # Log progress every 5 minutes to reduce spam
 
 class SearchService:
     """Service layer for ESCO search operations."""
@@ -37,6 +38,7 @@ class SearchService:
         self._client: Optional[WeaviateClient] = None
         self._search: Optional[ESCOSemanticSearch] = None
         self._config: Dict[str, Any] = {}
+        self._last_log_time: Optional[float] = None
         
         # Load configuration
         self._load_configuration()
@@ -73,24 +75,40 @@ class SearchService:
             self._search = ESCOSemanticSearch(self.config_path, self.profile)
         return self._search
     
-    def wait_for_ingestion_completion(self) -> bool:
+    def _should_log_progress(self) -> bool:
+        """Check if enough time has passed to log progress update."""
+        current_time = time.time()
+        if self._last_log_time is None or (current_time - self._last_log_time) >= LOG_INTERVAL_SECONDS:
+            self._last_log_time = current_time
+            return True
+        return False
+    
+    def wait_for_ingestion_completion(self, timeout_minutes: Optional[int] = None, log_component: str = "search_service") -> bool:
         """
         Wait for ingestion to complete.
+        
+        Args:
+            timeout_minutes: Maximum time to wait (defaults to config value)
+            log_component: Component name for contextual logging
         
         Returns:
             bool: True if ingestion completed successfully, False if timed out
         """
         # Get timeout configuration with defaults
-        timeout_minutes = self._config.get('app', {}).get('ingestion_wait_timeout_minutes', 60)
-        poll_interval = self._config.get('app', {}).get('ingestion_poll_interval_seconds', 30)
+        if timeout_minutes is None:
+            timeout_minutes = self._config.get('app', {}).get('ingestion_wait_timeout_minutes', DEFAULT_TIMEOUT_MINUTES)
+        poll_interval = self._config.get('app', {}).get('ingestion_poll_interval_seconds', POLL_INTERVAL_SECONDS)
         
         timeout_seconds = timeout_minutes * 60
         start_time = time.time()
         
+        # Log once at start with context
+        logger.info(f"[{log_component}] Monitoring ingestion completion (timeout: {timeout_minutes}min, poll: {poll_interval}s)")
+        
         while True:
             # Check if we've exceeded the timeout
             if time.time() - start_time > timeout_seconds:
-                logger.warning(f"Ingestion wait timed out after {timeout_minutes} minutes")
+                logger.warning(f"[{log_component}] Ingestion wait timeout after {timeout_minutes} minutes")
                 return False
             
             # Get current ingestion state
@@ -99,10 +117,10 @@ class SearchService:
                 current_status = status_data.get('status')
                 
                 if current_status == 'completed':
-                    logger.info("Ingestion completed successfully")
+                    logger.info(f"[{log_component}] Ingestion completed successfully")
                     return True
                 elif current_status == 'failed':
-                    logger.error("Ingestion failed")
+                    logger.error(f"[{log_component}] Ingestion failed")
                     return False
                 elif current_status == 'in_progress':
                     # Check if ingestion is stale
@@ -113,21 +131,21 @@ class SearchService:
                         try:
                             heartbeat_time = datetime.fromisoformat(heartbeat_str)
                             age_seconds = (datetime.utcnow() - heartbeat_time).total_seconds()
+                            staleness_threshold = self._config.get('app', {}).get('staleness_threshold_seconds', 7200)
                             
-                            if age_seconds > self._config.get('app', {}).get('staleness_threshold_seconds', 7200):
-                                logger.warning(f"Ingestion appears stale (last heartbeat: {age_seconds:.0f}s ago)")
+                            if age_seconds > staleness_threshold:
+                                logger.warning(f"[{log_component}] Ingestion stale (heartbeat age: {age_seconds:.0f}s > {staleness_threshold}s)")
                                 return False
                         except ValueError as e:
-                            logger.warning(f"Could not parse heartbeat timestamp: {str(e)}")
-                
-                # Log progress if available
-                if 'details' in status_data:
-                    details = status_data['details']
-                    if 'current_step' in details and 'step_number' in details:
-                        logger.info(f"Ingestion in progress: {details['current_step']} ({details['step_number']}/12)")
+                            logger.warning(f"[{log_component}] Invalid heartbeat timestamp: {str(e)}")
+                    
+                    # Periodic progress logging (reduced frequency)
+                    if self._should_log_progress() and 'current_step' in details and 'step_number' in details:
+                        step_info = f"{details['current_step']} ({details['step_number']}/12)"
+                        logger.info(f"[{log_component}] Ingestion progress: {step_info}")
                 
             except Exception as e:
-                logger.warning(f"Error checking ingestion status: {str(e)}")
+                logger.warning(f"[{log_component}] Status check error: {str(e)}")
             
             # Wait before next check
             time.sleep(poll_interval)
@@ -145,12 +163,12 @@ class SearchService:
             current_status = status_data.get('status')
             
             if current_status == 'in_progress':
-                # Check if we should wait for completion
-                if self.wait_for_ingestion_completion():
+                # Wait for completion with search service context
+                if self.wait_for_ingestion_completion(log_component="search_validation"):
                     # Ingestion completed successfully, proceed with validation
                     pass
                 else:
-                    return False, "Ingestion is in progress and wait timed out"
+                    return False, "Ingestion timeout during validation"
             
             # Now validate the data
             return self.search.validate_data()
@@ -185,13 +203,19 @@ class SearchService:
             # Client cleanup if needed
             pass
 
-def wait_for_ingestion_completion(search_client: ESCOSemanticSearch, timeout_minutes: int = DEFAULT_TIMEOUT_MINUTES) -> bool:
+# Unified ingestion wait function for standalone use
+def wait_for_ingestion_completion(
+    search_client: ESCOSemanticSearch, 
+    timeout_minutes: int = DEFAULT_TIMEOUT_MINUTES,
+    log_component: str = "standalone"
+) -> bool:
     """
-    Wait for ingestion to complete before proceeding with search service.
+    Wait for ingestion to complete using a search client instance.
     
     Args:
         search_client: The search client instance
         timeout_minutes: Maximum time to wait in minutes
+        log_component: Component name for contextual logging
         
     Returns:
         bool: True if ingestion completed successfully, False if timed out or failed
@@ -201,14 +225,16 @@ def wait_for_ingestion_completion(search_client: ESCOSemanticSearch, timeout_min
     """
     start_time = datetime.utcnow()
     timeout_delta = timedelta(minutes=timeout_minutes)
+    last_log_time = None
     
-    logger.info(f"Waiting for ingestion to complete (timeout: {timeout_minutes} minutes)")
+    # Single initial log with context
+    logger.info(f"[{log_component}] Monitoring ingestion (timeout: {timeout_minutes}min)")
     
     while True:
         try:
             # Check if we've exceeded the timeout
             if datetime.utcnow() - start_time > timeout_delta:
-                error_msg = f"Timeout waiting for ingestion completion after {timeout_minutes} minutes"
+                error_msg = f"[{log_component}] Timeout after {timeout_minutes} minutes"
                 logger.error(error_msg)
                 return False
             
@@ -229,31 +255,42 @@ def wait_for_ingestion_completion(search_client: ESCOSemanticSearch, timeout_min
             
             # Handle different states
             if current_state == IngestionState.COMPLETED:
-                logger.info("Ingestion completed successfully")
+                logger.info(f"[{log_component}] Ingestion completed")
                 return True
                 
             elif current_state == IngestionState.FAILED:
-                error_msg = f"Ingestion failed: {status_data.get('details', {}).get('error', 'Unknown error')}"
+                error_msg = f"[{log_component}] Ingestion failed: {status_data.get('details', {}).get('error', 'Unknown error')}"
                 logger.error(error_msg)
                 raise SearchError(error_msg)
                 
             elif current_state == IngestionState.IN_PROGRESS:
-                # Log progress if available
-                details = status_data.get('details', {})
-                step = details.get('step', 'unknown')
-                progress = details.get('progress', 'unknown')
-                last_heartbeat = details.get('last_heartbeat', 'unknown')
+                # Reduced frequency progress logging
+                current_time = datetime.utcnow()
+                should_log = (last_log_time is None or 
+                             (current_time - last_log_time).seconds >= LOG_INTERVAL_SECONDS)
                 
-                logger.info(f"Ingestion in progress - Step: {step}, Progress: {progress}, Last heartbeat: {last_heartbeat}")
+                if should_log:
+                    details = status_data.get('details', {})
+                    if 'current_step' in details and 'step_number' in details:
+                        step_info = f"{details['current_step']} ({details['step_number']}/12)"
+                        logger.info(f"[{log_component}] Progress: {step_info}")
+                    else:
+                        logger.info(f"[{log_component}] Ingestion in progress...")
+                    last_log_time = current_time
                 
             else:
-                logger.info(f"Waiting for ingestion to start (current status: {current_status})")
+                # Only log unknown states periodically
+                current_time = datetime.utcnow()
+                if (last_log_time is None or 
+                    (current_time - last_log_time).seconds >= LOG_INTERVAL_SECONDS):
+                    logger.info(f"[{log_component}] Status: {current_status}")
+                    last_log_time = current_time
             
             # Wait before next check
             time.sleep(POLL_INTERVAL_SECONDS)
             
         except Exception as e:
-            error_msg = f"Error checking ingestion status: {str(e)}"
+            error_msg = f"[{log_component}] Status check error: {str(e)}"
             logger.error(error_msg)
             raise SearchError(error_msg)
 
@@ -285,21 +322,21 @@ def main():
         # Initialize the search client
         search_client = ESCOSemanticSearch()
         
-        # Wait for ingestion to complete
-        if not wait_for_ingestion_completion(search_client):
-            error_msg = "Timed out waiting for ingestion completion"
+        # Wait for ingestion to complete with search service context
+        if not wait_for_ingestion_completion(search_client, log_component="search_service"):
+            error_msg = "Search service startup failed: ingestion timeout"
             logger.error(error_msg)
             raise SearchError(error_msg)
         
         # Validate that data is indexed
         is_valid, validation_details = search_client.validate_data()
         if not is_valid:
-            error_msg = f"Data validation failed. Please ensure all required data is indexed. Validation details: {validation_details}"
-            log_error(logger, DataValidationError(error_msg), {'validation_details': validation_details})
+            error_msg = f"Search service startup failed: data validation. Details: {validation_details}"
+            logger.error(error_msg)
             return
         
-        logger.info("Search service is ready. Data validation passed.")
-        logger.info(f"Indexed data: {validation_details}")
+        logger.info("Search service ready")
+        logger.info(f"Available data: {validation_details}")
         
         # Start health check server in a separate thread
         health_check_thread = threading.Thread(target=run_health_check_server, daemon=True)
@@ -311,7 +348,7 @@ def main():
             
     except Exception as e:
         log_error(logger, e, {'operation': 'search_service_main'})
-        raise SearchError(f"Error in search service: {str(e)}")
+        raise SearchError(f"Search service error: {str(e)}")
 
 if __name__ == "__main__":
     main() 

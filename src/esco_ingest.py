@@ -379,7 +379,7 @@ class WeaviateIngestor(BaseIngestor):
 
     def create_skill_relations(self):
         """Create occupation-skill relations"""
-        file_path = os.path.join(self.esco_dir, "occupationSkillRelations.csv")
+        file_path = os.path.join(self.esco_dir, "occupationSkillRelations_en.csv")
         if not os.path.exists(file_path):
             logger.warning(f"Occupation-skill relations file not found: {file_path} – skipping.")
             return
@@ -436,7 +436,7 @@ class WeaviateIngestor(BaseIngestor):
 
     def create_hierarchical_relations(self):
         """Create hierarchical relations between occupations"""
-        file_path = os.path.join(self.esco_dir, "broaderRelationsOccupationPillar.csv")
+        file_path = os.path.join(self.esco_dir, "broaderRelationsOccPillar_en.csv")
         if not os.path.exists(file_path):
             logger.warning(f"Hierarchical relations file not found: {file_path} – skipping.")
             return
@@ -552,7 +552,7 @@ class WeaviateIngestor(BaseIngestor):
             )
         
         # Process skill groups CSV
-        skill_groups_file = os.path.join(self.esco_dir, "skill_groups_en.csv")
+        skill_groups_file = os.path.join(self.esco_dir, "skillGroups_en.csv")
         self.process_csv_in_batches(skill_groups_file, process_batch, update_heartbeat)
         logger.info("Skill group ingestion completed")
 
@@ -589,13 +589,13 @@ class WeaviateIngestor(BaseIngestor):
             )
         
         # Process skill collections CSV
-        collections_file = os.path.join(self.esco_dir, "skill_collections_en.csv")
+        collections_file = os.path.join(self.esco_dir, "conceptSchemes_en.csv")
         self.process_csv_in_batches(collections_file, process_batch, update_heartbeat)
         logger.info("Skill collection ingestion completed")
 
     def create_skill_collection_relations(self):
         """Create relations between skills and skill collections"""
-        file_path = os.path.join(self.esco_dir, "skillCollectionMemberSkills.csv")
+        file_path = os.path.join(self.esco_dir, "skillSkillRelations_en.csv")
         if not os.path.exists(file_path):
             logger.warning(f"Skill collection relations file not found: {file_path} – skipping.")
             return
@@ -645,7 +645,7 @@ class WeaviateIngestor(BaseIngestor):
 
     def create_skill_skill_relations(self):
         """Create skill-to-skill relations"""
-        file_path = os.path.join(self.esco_dir, "skillSkillRelations.csv")
+        file_path = os.path.join(self.esco_dir, "skillSkillRelations_en.csv")
         if not os.path.exists(file_path):
             logger.warning(f"Skill-skill relations file not found: {file_path} – skipping.")
             return
@@ -691,7 +691,7 @@ class WeaviateIngestor(BaseIngestor):
 
     def create_broader_skill_relations(self):
         """Create broader skill relations"""
-        file_path = os.path.join(self.esco_dir, "broaderRelationsSkillPillar.csv")
+        file_path = os.path.join(self.esco_dir, "broaderRelationsSkillPillar_en.csv")
         if not os.path.exists(file_path):
             logger.warning(f"Broader skill relations file not found: {file_path} – skipping.")
             return
