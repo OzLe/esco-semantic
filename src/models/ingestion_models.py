@@ -7,8 +7,8 @@ inputs, outputs, and state throughout the ingestion process.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Any, Optional, timedelta
-from datetime import datetime
+from typing import Dict, List, Any, Optional
+from datetime import datetime, timedelta
 
 
 class IngestionState(Enum):

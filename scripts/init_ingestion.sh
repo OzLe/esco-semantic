@@ -14,7 +14,7 @@ log() {
 # Helper function to check if a process is still running
 check_process() {
     local pid=$1
-    if ps -p $pid > /dev/null; then
+    if kill -0 $pid 2>/dev/null; then
         return 0  # Process is running
     else
         return 1  # Process is not running

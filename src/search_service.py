@@ -12,7 +12,7 @@ from src.models.ingestion_models import IngestionState
 import yaml
 from typing import Dict, Any, List, Optional, Tuple
 from .esco_weaviate_client import WeaviateClient
-from .weaviate_semantic_search import WeaviateSemanticSearch
+from .weaviate_semantic_search import ESCOSemanticSearch
 
 # Setup logging
 logger = setup_logging()
@@ -35,7 +35,7 @@ class SearchService:
         self.config_path = config_path
         self.profile = profile
         self._client: Optional[WeaviateClient] = None
-        self._search: Optional[WeaviateSemanticSearch] = None
+        self._search: Optional[ESCOSemanticSearch] = None
         self._config: Dict[str, Any] = {}
         
         # Load configuration
@@ -67,10 +67,10 @@ class SearchService:
         return self._client
     
     @property
-    def search(self) -> WeaviateSemanticSearch:
-        """Get or create WeaviateSemanticSearch instance."""
+    def search(self) -> ESCOSemanticSearch:
+        """Get or create ESCOSemanticSearch instance."""
         if self._search is None:
-            self._search = WeaviateSemanticSearch(self.config_path, self.profile)
+            self._search = ESCOSemanticSearch(self.config_path, self.profile)
         return self._search
     
     def wait_for_ingestion_completion(self) -> bool:

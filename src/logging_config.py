@@ -54,28 +54,30 @@ def setup_logging(
     logger = logging.getLogger('esco')
     logger.setLevel(getattr(logging, log_level.upper()))
     
-    # Create console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(getattr(logging, log_level.upper()))
-    console_formatter = logging.Formatter(log_format)
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
-    
-    # Create file handler if log directory is specified
-    if log_dir:
-        log_path = Path(log_dir)
-        log_path.mkdir(parents=True, exist_ok=True)
+    # Check if handlers already exist to prevent duplicates
+    if not logger.handlers:
+        # Create console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(getattr(logging, log_level.upper()))
+        console_formatter = logging.Formatter(log_format)
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
         
-        # Create handlers for different log levels
-        for level in ['info', 'error']:
-            file_handler = logging.FileHandler(
-                log_path / f'esco_{level}.log',
-                encoding='utf-8'
-            )
-            file_handler.setLevel(getattr(logging, level.upper()))
-            file_formatter = logging.Formatter(log_format)
-            file_handler.setFormatter(file_formatter)
-            logger.addHandler(file_handler)
+        # Create file handler if log directory is specified
+        if log_dir:
+            log_path = Path(log_dir)
+            log_path.mkdir(parents=True, exist_ok=True)
+            
+            # Create handlers for different log levels
+            for level in ['info', 'error']:
+                file_handler = logging.FileHandler(
+                    log_path / f'esco_{level}.log',
+                    encoding='utf-8'
+                )
+                file_handler.setLevel(getattr(logging, level.upper()))
+                file_formatter = logging.Formatter(log_format)
+                file_handler.setFormatter(file_formatter)
+                logger.addHandler(file_handler)
     
     return logger
 
@@ -167,7 +169,8 @@ def log_ingestion_error(
 def log_error(
     logger: logging.Logger,
     error: Exception,
-    context: Optional[Dict[str, Any]] = None
+    context: Optional[Dict[str, Any]] = None,
+    level: int = logging.ERROR
 ) -> None:
     """
     Log error with context.
@@ -176,33 +179,12 @@ def log_error(
         logger: Logger instance
         error: Exception that occurred
         context: Additional context information
+        level: Logging level to use (defaults to ERROR)
     """
     error_context = {
         'error_type': error.__class__.__name__,
         'error_message': str(error),
         'timestamp': datetime.utcnow().isoformat()
-    }
-    
-    if context:
-        error_context.update(context)
-    
-    logger.error(
-        f"Error: {error.__class__.__name__} - {str(error)}",
-        extra=error_context
-    )
-
-def log_error(logger: logging.Logger, error: Exception, context: dict = None, level: int = logging.ERROR):
-    """Helper function to log errors with context
-    
-    Args:
-        logger: Logger instance to use
-        error: Exception to log
-        context: Optional dictionary of context information
-        level: Logging level to use (defaults to ERROR)
-    """
-    error_context = {
-        'error_type': error.__class__.__name__,
-        'error_message': str(error)
     }
     
     if hasattr(error, 'details'):

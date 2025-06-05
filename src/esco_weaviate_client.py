@@ -422,7 +422,15 @@ class WeaviateClient:
             )
             
             if result["data"]["Get"]["Metadata"]:
-                return result["data"]["Get"]["Metadata"][0]
+                status_data = result["data"]["Get"]["Metadata"][0]
+                # Parse the JSON details field back to a dict
+                if "details" in status_data and isinstance(status_data["details"], str):
+                    try:
+                        status_data["details"] = json.loads(status_data["details"])
+                    except (json.JSONDecodeError, TypeError):
+                        # If parsing fails, set details to empty dict
+                        status_data["details"] = {}
+                return status_data
             return {"status": "not_started"}
         except Exception as e:
             logger.error(f"Failed to get ingestion status: {str(e)}")
